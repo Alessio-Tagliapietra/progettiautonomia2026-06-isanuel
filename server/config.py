@@ -154,6 +154,27 @@ COLORS = {
 BATCH_SIZE = 2  # Numero di frame da processare in batch
 
 
+
+# ============================================================================
+# PARAMETRI CONTROLLO DISTANZA E ACCESSI
+# ============================================================================
+
+# Soglia di distanza per considerare un veicolo "abbastanza vicino"
+# Range: 0.0-1.0, dove 0 = molto vicino, 1 = molto lontano
+# Valori tipici: 0.3-0.7
+DISTANCE_THRESHOLD = 0.5
+
+# Intervallo minimo tra due entrate consecutive della stessa targa (secondi)
+# Evita rilevazioni duplicate quando il veicolo passa lentamente
+MIN_ENTRY_INTERVAL_SECONDS = 10
+
+# Intervallo minimo tra l'ultima rilevazione e un'uscita (secondi)
+# Come da specifica: almeno 60 secondi dall'ultima rilevazione
+MIN_EXIT_INTERVAL_SECONDS = 60
+
+# Pulizia automatica dei record vecchi nel tracker (ore)
+ACCESS_TRACKER_CLEANUP_HOURS = 24
+
 # ============================================================================
 # DEBUG E LOGGING
 # ============================================================================
@@ -304,6 +325,10 @@ def validate_config():
     # Check targhe autorizzate
     if len(ALL_AUTHORIZED_PLATES) == 0:
         errors.append("Nessuna targa autorizzata configurata!")
+
+    if not 0 <= DISTANCE_THRESHOLD <= 1:
+        errors.append("DISTANCE_THRESHOLD deve essere tra 0 e 1")
+
 
     if BATCH_SIZE < 1:
         errors.append("BATCH_SIZE deve essere almeno 1")
