@@ -181,6 +181,7 @@ if __name__ == "__main__":
     path_video = "./test_input/video3.mp4"
     path_image = "./test_input/test_frame.jpg"
     path_image2 = "./test_input/test_frame_scura.jpg"
-    send_single_frame(cv2.imread(path_image))
+    path_distante = "./test_input/distante.png"
+    send_single_frame(cv2.imread(path_distante))
     # send_video_stream(path_video, fps=30)
     
