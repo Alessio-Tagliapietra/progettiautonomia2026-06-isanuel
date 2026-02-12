@@ -18,6 +18,11 @@ headers = {
     "API-Key": "g9f3e1d7c4b84eab9f5c1d2e3a4b57kd"
 }
 
+client_data = {
+    "type": "entrata",
+    "gate_id":"my_gate_id" #modificare sulla base dell'id del cancello
+}
+
 service_enabled = True
 
 
@@ -82,7 +87,9 @@ def send_single_frame(frame):
         
     data = {
         "metadata": json.dumps({
-        "detections": detections
+        "detections": detections,
+        "type": client_data["type"],
+        "gate": client_data["gate_id"],
         })
     }
             
