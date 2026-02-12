@@ -84,6 +84,18 @@ except ImportError:
     print("❌ Errore caricamento di frame_queue.py")
 
 
+
+
+try:
+    from server.process.access_tracker import access_tracker
+
+    if config.VERBOSE:
+        print("✅ Tracker importato correttamente da access_tracker")
+except ImportError:
+    print("❌ Errore caricamento di access_tracker.py")
+
+
+
 # ============================================================================
 # INIZIALIZZAZIONE
 # ============================================================================
@@ -266,6 +278,9 @@ def processing_thread():
     try:
         while not stop_threads.is_set():
             # Acquisizione frame
+            gate_type = "entrata"  # default
+            gate_id = "unknown"    # default
+            
             # tramite camera/video locale
             if config.FRAME_SOURCE == "local":
                 ret, frame = camera.read()
@@ -273,6 +288,7 @@ def processing_thread():
                     if config.VERBOSE:
                         print("⚠️  Fine del video o impossibile leggere il frame")
                     break
+                metadata = {}
 
             # tramite frame queue (http upload)
             else:
@@ -291,24 +307,41 @@ def processing_thread():
                     if config.VERBOSE:
                         print("⚠️  Frame None, non valido")
                     continue
+                
+                # ESTRAI METADATA GATE
+                gate_type = metadata.get("type", "entrata")
+                gate_id = metadata.get("gate_id", "unknown")
 
             frame_count += 1
 
             print_progress(frame_count, start_time)
 
-            # detections = detect_vehicles(frame)
+            # detections
             if config.FRAME_SOURCE == "local":
                 detections = detect_vehicles(frame)
             else:
                 metadata = metadata or {}
-
                 detections = metadata.get("detections", [])
 
             detections = update_tracking(detections)
 
-            process_detections(detections, frame, frame_count, checked_vehicles)
+            # MODIFICA QUI: passa gate_type e gate_id
+            process_detections(
+                detections, 
+                frame, 
+                frame_count, 
+                checked_vehicles,
+                gate_type=gate_type,
+                gate_id=gate_id
+            )
 
             visualization_manager.add_frame_to_magazine(frame, detections)
+            
+            # Cleanup periodico del tracker (ogni 1000 frame)
+            if frame_count % 1000 == 0:
+                access_tracker.cleanup_old_entries(
+                    max_age_hours=config.ACCESS_TRACKER_CLEANUP_HOURS
+                )
 
     except KeyboardInterrupt:
         if config.VERBOSE:
