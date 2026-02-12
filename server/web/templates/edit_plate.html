@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Modifica targa - Gestione Accessi{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm mx-auto border-0" style="max-width: 600px;">
+    <div class="card-body">
+        <h3 class="card-title mb-4 text-center fw-semibold">
+            <i class="bi bi-pencil-square text-primary me-2"></i>Modifica targa
+        </h3>
+
+        <form method="POST" action="{{ url_for('edit_plate', plate_number=plate['plate_number']) }}">
+            
+            <!-- Numero targa -->
+            <div class="mb-3">
+                <label for="plate_number" class="form-label fw-semibold">Numero targa</label>
+                <input type="text"
+                       class="form-control"
+                       id="plate_number"
+                       name="plate_number"
+                       value="{{ plate['plate_number'] }}"
+                       readonly
+                       style="background-color: #f1f3f5; text-transform: uppercase;">
+                <div class="form-text">Il numero targa non può essere modificato.</div>
+            </div>
+
+            <!-- Nome -->
+            <div class="mb-3">
+                <label for="first_name" class="form-label fw-semibold">Nome</label>
+                <input type="text"
+                       class="form-control"
+                       id="first_name"
+                       name="first_name"
+                       value="{{ plate['first_name'] }}"
+                       required>
+            </div>
+
+            <!-- Cognome -->
+            <div class="mb-3">
+                <label for="last_name" class="form-label fw-semibold">Cognome</label>
+                <input type="text"
+                       class="form-control"
+                       id="last_name"
+                       name="last_name"
+                       value="{{ plate['last_name'] }}"
+                       required>
+            </div>
+
+            <!-- Ruolo -->
+            <div class="mb-3">
+                <label for="role" class="form-label fw-semibold">Ruolo</label>
+                <select class="form-select" id="role" name="role" required>
+                    <option value="Dipendente" {% if plate['role'] == 'Dipendente' %}selected{% endif %}>Dipendente</option>
+                    <option value="Visitatore" {% if plate['role'] == 'Visitatore' %}selected{% endif %}>Visitatore</option>
+                    <option value="Studente" {% if plate['role'] == 'Studente' %}selected{% endif %}>Studente</option>
+                    <option value="Docente" {% if plate['role'] == 'Docente' %}selected{% endif %}>Docente</option>
+                    <option value="Altro" {% if plate['role'] == 'Altro' %}selected{% endif %}>Altro</option>
+                </select>
+            </div>
+
+            <!-- Data di scadenza -->
+            <div class="mb-3">
+                <label for="expiration_date" class="form-label fw-semibold">Data di scadenza</label>
+                <input type="date"
+                       class="form-control"
+                       id="expiration_date"
+                       name="expiration_date"
+                       value="{{ plate['expiration_date'] }}">
+                <div class="form-text">Lascia vuoto se la targa non ha una scadenza.</div>
+            </div>
+
+            <!-- Note -->
+            <div class="mb-3">
+                <label for="notes" class="form-label fw-semibold">Note</label>
+                <textarea class="form-control"
+                          id="notes"
+                          name="notes"
+                          rows="3"
+                          placeholder="Eventuali annotazioni...">{{ plate['notes'] or '' }}</textarea>
+            </div>
+
+            <!-- Pulsanti -->
+            <div class="d-flex justify-content-between mt-4">
+                <a href="{{ url_for('plates') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i> Annulla
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i> Salva modifiche
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
