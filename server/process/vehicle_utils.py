@@ -7,6 +7,8 @@ funzione offerte:
 - get_car
 - process_vehicle_simple
 - process_detections
+- process_entry
+- process_exit
 
 """
 
@@ -22,6 +24,8 @@ try:
         log_plate_result,
         log_to_csv,
     )
+    from server.process.distance_utils import is_vehicle_close_enough
+    from server.process.access_tracker import access_tracker
     from server.control.context import context
 
 except ImportError as e:
@@ -83,26 +87,117 @@ def process_vehicle_simple(
         plates, track_id, frame_count
     )
 
-    # COntrollo valore minimo di confidenza
+    # Controllo valore minimo di confidenza
     if not best_result or best_confidence < config.OCR_MIN_CONFIDENCE:
         if config.VERBOSE:
             print(f"   ✗ No valid plate found (confidence: {best_confidence:.2f})")
         return None, None, None, None
 
+    return best_result, best_confidence, None, None
+
+
+def process_entry(
+    plate_text: str, 
+    best_confidence: float, 
+    gate_id: str
+) -> tuple:
+    """
+    Processa un'entrata: verifica autorizzazione e registra il tentativo.
+    
+    Args:
+        plate_text: targa letta
+        best_confidence: confidenza OCR
+        gate_id: ID del gate
+    
+    Returns:
+        tuple: (plate_text, best_confidence, plate_info, status)
+    """
+    if config.VERBOSE:
+        print(f"\n   🚪 PROCESSANDO ENTRATA @ {gate_id}")
+    
+    # Verifica se può essere processata (controllo temporale)
+    if not access_tracker.can_process_entry(plate_text, gate_id):
+        if config.VERBOSE:
+            print(f"   ⏱️  Entrata scartata: rilevazione troppo recente")
+        return None, None, None, None
+    
     # Controlla autorizzazione
-    status, plate_info = check_authorization(best_result)
-
+    status, plate_info = check_authorization(plate_text)
+    
     # Log
-    log_plate_result(best_result, status, best_confidence, plate_info)
-    log_to_csv(best_result, status, )
-    log_access_to_db(best_result, status, )
+    log_plate_result(plate_text, status, best_confidence, plate_info, event="entrata")
+    log_to_csv(plate_text, status, event="entrata")
+    log_access_to_db(plate_text, status, event="entrata")
+    
+    # Registra l'entrata nel tracker
+    access_tracker.register_entry(plate_text, gate_id)
+    
+    return plate_text, best_confidence, plate_info, status
 
-    return best_result, best_confidence, plate_info, status
+
+def process_exit(
+    plate_text: str, 
+    best_confidence: float, 
+    gate_id: str
+) -> tuple:
+    """
+    Processa un'uscita: verifica che sia passato abbastanza tempo dall'ultima
+    rilevazione e registra l'uscita.
+    
+    Args:
+        plate_text: targa letta
+        best_confidence: confidenza OCR
+        gate_id: ID del gate
+    
+    Returns:
+        tuple: (plate_text, best_confidence, plate_info, status)
+    """
+    if config.VERBOSE:
+        print(f"\n   🚪 PROCESSANDO USCITA @ {gate_id}")
+    
+    # Verifica se può essere processata (controllo temporale)
+    if not access_tracker.can_process_exit(plate_text, gate_id):
+        if config.VERBOSE:
+            print(f"   ⏱️  Uscita scartata: rilevazione troppo recente o nessuna entrata")
+        return None, None, None, None
+    
+    # Per le uscite, registriamo sempre (non controlliamo autorizzazione)
+    # ma potremmo volere comunque le info della targa
+    status, plate_info = check_authorization(plate_text)
+    
+    # Forza status a "exit" per differenziare nei log
+    status = "exit"
+    
+    # Log
+    log_plate_result(plate_text, status, best_confidence, plate_info, event="uscita")
+    log_to_csv(plate_text, status, event="uscita")
+    log_access_to_db(plate_text, status, event="uscita")
+    
+    # Registra l'uscita nel tracker
+    access_tracker.register_exit(plate_text, gate_id)
+    
+    return plate_text, best_confidence, plate_info, status
 
 
 def process_detections(
-    detections: list, frame: np.ndarray, frame_count: int, checked_vehicles: dict
+    detections: list, 
+    frame: np.ndarray, 
+    frame_count: int, 
+    checked_vehicles: dict,
+    gate_type: str = "entrata",
+    gate_id: str = "unknown"
 ):
+    """
+    Processa le detection applicando la logica di entrata/uscita.
+    
+    Args:
+        detections: lista detection
+        frame: frame corrente
+        frame_count: numero frame
+        checked_vehicles: dizionario veicoli già controllati
+        gate_type: "entrata" o "uscita"
+        gate_id: ID del gate
+    """
 
     for det in detections:
         if "track_id" not in det:
@@ -122,23 +217,42 @@ def process_detections(
         if det["label"] != "to_check":
             continue
 
-        # estrai coordinate veicolo
+        # ===== CONTROLLO DISTANZA =====
         vehicle_box = (int(det["x1"]), int(det["y1"]), int(det["x2"]), int(det["y2"]))
+        
+        if not is_vehicle_close_enough(vehicle_box, frame.shape):
+            if config.VERBOSE:
+                print(f"   ⚠️  Veicolo {track_id} troppo lontano, ignorato")
+            continue
 
-        # processa veicolo
-        plate_text, score, plate_info, status = process_vehicle_simple(
+        # ===== PROCESSING TARGA =====
+        plate_text, score, _, _ = process_vehicle_simple(
             vehicle_box, frame, track_id, frame_count
         )
 
         if not plate_text:
             continue
 
-        # aggiorna detection se trovata targa valida
-        if plate_text:
-            det["label"] = status
-            det["plate_text"] = plate_text
-            det["plate_info"] = plate_info
-            # salva risultato per riuso futuro
-            checked_vehicles[track_id] = (status, plate_text, plate_info)
+        # ===== LOGICA ENTRATA/USCITA =====
+        if gate_type == "entrata":
+            plate_text, score, plate_info, status = process_entry(
+                plate_text, score, gate_id
+            )
+        else:  # uscita
+            plate_text, score, plate_info, status = process_exit(
+                plate_text, score, gate_id
+            )
 
-            return plate_text
+        # Se il processing ha restituito None, la rilevazione è stata scartata
+        if not plate_text:
+            continue
+
+        # aggiorna detection se trovata targa valida
+        det["label"] = status
+        det["plate_text"] = plate_text
+        det["plate_info"] = plate_info
+        
+        # salva risultato per riuso futuro
+        checked_vehicles[track_id] = (status, plate_text, plate_info)
+
+        return plate_text
