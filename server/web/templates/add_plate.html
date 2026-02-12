@@ -1,0 +1,89 @@
+{% extends "base.html" %} {% block title %}Aggiungi nuova targa - Gestione
+Accessi{% endblock %} {% block content %}
+<div class="card shadow-sm mx-auto" style="max-width: 600px">
+	<div class="card-body">
+		<h3 class="card-title mb-4 text-center">
+			<i class="bi bi-plus-circle text-success me-2"></i>Aggiungi nuova targa
+		</h3>
+
+		<form method="POST" action="{{ url_for('add_plate') }}">
+			<!-- Numero targa -->
+			<div class="mb-3">
+				<label for="plate_number" class="form-label">Numero targa</label>
+				<input
+					type="text"
+					class="form-control"
+					id="plate_number"
+					name="plate_number"
+					placeholder="Es. AB123CD"
+					pattern="^[A-HJ-NPR-TV-Za-hj-npr-tv-z]{2}[0-9]{3}[A-HJ-NPR-TV-Za-hj-npr-tv-z]{2}$"
+					title="Inserisci una targa valida (solo lettere e numeri, max 10 caratteri)"
+					required
+					maxlength="10"
+					style="text-transform: uppercase" />
+			</div>
+
+			<!-- Nome -->
+			<div class="mb-3">
+				<label for="first_name" class="form-label">Nome</label>
+				<input
+					type="text"
+					class="form-control"
+					id="first_name"
+					name="first_name"
+					placeholder="Nome del proprietario"
+					required />
+			</div>
+
+			<!-- Cognome -->
+			<div class="mb-3">
+				<label for="last_name" class="form-label">Cognome</label>
+				<input
+					type="text"
+					class="form-control"
+					id="last_name"
+					name="last_name"
+					placeholder="Cognome del proprietario"
+					required />
+			</div>
+
+			<!-- Ruolo -->
+			<div class="mb-3">
+				<label for="role" class="form-label">Ruolo</label>
+				<select class="form-select" id="role" name="role" required>
+					<option value="" selected disabled>Seleziona un ruolo...</option>
+					<option value="Dirigente">Dirigente</option>
+					<option value="Collaboratore">Collaboratore</option>
+					<option value="Docente">Docente</option>
+					<option value="Personale_ATA">Personale ATA</option>
+					<option value="Studente">Studente</option>
+					<option value="Altro">Altro</option>
+				</select>
+			</div>
+
+			<!-- Data di scadenza -->
+			<div class="mb-3">
+				<label for="expiration_date" class="form-label">Data di scadenza</label>
+				<input
+					type="date"
+					class="form-control"
+					id="expiration_date"
+					name="expiration_date" />
+				<div class="form-text">
+					Lascia vuoto se l’autorizzazione non ha scadenza.
+				</div>
+			</div>
+
+			<!-- Pulsanti -->
+			<div class="d-flex justify-content-between mt-4">
+				<a href="{{ url_for('plates') }}" class="btn btn-outline-secondary">
+					<i class="bi bi-arrow-left me-1"></i> Annulla
+				</a>
+				<button type="submit" class="btn btn-success">
+					<i class="bi bi-check-circle me-1"></i> Salva targa
+				</button>
+			</div>
+		</form>
+	</div>
+</div>
+{% endblock %}
