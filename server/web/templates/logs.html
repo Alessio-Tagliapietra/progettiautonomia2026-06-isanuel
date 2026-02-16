@@ -49,6 +49,7 @@
                     <option value="expired" {% if request.args.get('status') == 'expired' %}selected{% endif %}>Scaduto</option>
                 </select>
             </div>
+            
 
             <div class="col-md-4 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1 shadow-sm">
@@ -90,6 +91,7 @@
                         <th scope="col">Targa</th>
                         <th scope="col">Stato</th>
                         <th scope="col">Evento</th>
+                        <th scope="col">Intestatario</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -109,6 +111,18 @@
                         </td>
                         
                         <td>{{ log['event'] or '-' }}</td>
+
+
+                        <td>
+                        {% if log['first_name'] %}
+                            <div class="fw-semibold">
+                                {{ log['first_name'] }} {{ log['last_name'] }}
+                            </div>
+                            <small class="text-muted">{{ log['role'] }}</small>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     </tr>
                     {% endfor %}
                 </tbody>

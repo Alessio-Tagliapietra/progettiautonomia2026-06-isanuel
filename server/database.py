@@ -396,41 +396,40 @@ class DatabaseManager:
             print(f"❌ Errore log accesso: {e}")
 
     def get_access_history(
-        self, plate_number: str = None, limit: int = 100
-    ) -> List[Dict]:
+    self, plate_number: str = None, limit: int = 100
+) -> List[Dict]:
         """
-        Recupera storico accessi
-
-        Args:
-            plate_number: filtra per targa specifica (None = tutte)
-            limit: numero massimo record
-
-        Returns:
-            Lista di dizionari con log accessi
+        Recupera storico accessi con informazioni proprietario se presente
         """
+
         try:
             cursor = self.connection.cursor()
 
+            base_query = """
+                SELECT 
+                    access_log.*,
+                    authorized_plates.first_name,
+                    authorized_plates.last_name,
+                    authorized_plates.role
+                FROM access_log
+                LEFT JOIN authorized_plates 
+                    ON access_log.plate_number = authorized_plates.plate_number
+            """
+
             if plate_number:
                 plate_number = plate_number.upper().strip()
-                cursor.execute(
-                    """
-                    SELECT * FROM access_log
-                    WHERE plate_number = ?
-                    ORDER BY timestamp DESC
+                query = base_query + """
+                    WHERE access_log.plate_number = ?
+                    ORDER BY access_log.timestamp DESC
                     LIMIT ?
-                """,
-                    (plate_number, limit),
-                )
+                """
+                cursor.execute(query, (plate_number, limit))
             else:
-                cursor.execute(
-                    """
-                    SELECT * FROM access_log
-                    ORDER BY timestamp DESC
+                query = base_query + """
+                    ORDER BY access_log.timestamp DESC
                     LIMIT ?
-                """,
-                    (limit,),
-                )
+                """
+                cursor.execute(query, (limit,))
 
             return [dict(row) for row in cursor.fetchall()]
 

@@ -218,6 +218,7 @@ def logs():
 
     plate_number = request.args.get("plate_number", "").strip().upper()
     status = request.args.get("status", "")
+    
 
     all_logs = db.get_access_history(limit=200)
 
