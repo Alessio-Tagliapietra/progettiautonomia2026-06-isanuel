@@ -218,9 +218,11 @@ def logs():
 
     plate_number = request.args.get("plate_number", "").strip().upper()
     status = request.args.get("status", "")
+    limit = int(request.args.get("limit", 50))
+
     
 
-    all_logs = db.get_access_history(limit=200)
+    all_logs = db.get_access_history(limit=limit)
 
     # Filtri
     if plate_number:
@@ -228,7 +230,7 @@ def logs():
     if status:
         all_logs = [log for log in all_logs if log["status"] == status]
 
-    return render_template("logs.html", logs=all_logs)
+    return render_template("logs.html", logs=all_logs, selected_limit=limit)
 
 
 @app.route("/logs/export")
