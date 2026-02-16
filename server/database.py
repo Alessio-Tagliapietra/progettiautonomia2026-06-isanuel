@@ -396,7 +396,7 @@ class DatabaseManager:
             print(f"❌ Errore log accesso: {e}")
 
     def get_access_history(
-    self, plate_number: str = None, limit: int = 100, date: str = None, status: str = None
+    self, plate_number: str = None, limit: int = 10000000, date: str = None, status: str = None
 ) -> List[Dict]:
         """
         Recupera storico accessi con informazioni proprietario se presente

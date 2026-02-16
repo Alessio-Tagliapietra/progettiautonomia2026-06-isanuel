@@ -221,7 +221,6 @@ def logs():
 
     plate_number = request.args.get("plate_number", "").strip().upper()
     status = request.args.get("status", "")
-    limit = int(request.args.get("limit", 50))
     selected_date = request.args.get("selected_date", "")
     
     if not selected_date:
@@ -234,9 +233,9 @@ def logs():
 
     
 
-    all_logs = db.get_access_history(limit=limit, plate_number=plate_number, date=selected_date, status=status)
+    all_logs = db.get_access_history(plate_number=plate_number, date=selected_date, status=status)
 
-    return render_template("logs.html", logs=all_logs, selected_limit=limit, selected_date = selected_date, today=today)
+    return render_template("logs.html", logs=all_logs, selected_date = selected_date, today=today)
 
 
 @app.route("/logs/export")
