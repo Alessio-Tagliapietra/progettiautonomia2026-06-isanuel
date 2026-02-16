@@ -396,7 +396,7 @@ class DatabaseManager:
             print(f"❌ Errore log accesso: {e}")
 
     def get_access_history(
-    self, plate_number: str = None, limit: int = 100
+    self, plate_number: str = None, limit: int = 100, date: str = None, status: str = None
 ) -> List[Dict]:
         """
         Recupera storico accessi con informazioni proprietario se presente
@@ -416,22 +416,40 @@ class DatabaseManager:
                     ON access_log.plate_number = authorized_plates.plate_number
             """
 
-            if plate_number:
-                plate_number = plate_number.upper().strip()
-                query = base_query + """
-                    WHERE access_log.plate_number = ?
-                    ORDER BY access_log.timestamp DESC
-                    LIMIT ?
-                """
-                cursor.execute(query, (plate_number, limit))
-            else:
-                query = base_query + """
-                    ORDER BY access_log.timestamp DESC
-                    LIMIT ?
-                """
-                cursor.execute(query, (limit,))
+            conditions = []
+            params = []
+
+            # Filtro per targa
+            if plate_number and plate_number.strip() != "":
+                conditions.append("access_log.plate_number = ?")
+                params.append(plate_number.upper().strip())
+
+            # 🔥 Filtro per data singola
+            if date and date.strip() != "":
+                conditions.append("date(access_log.timestamp) = ?")
+                params.append(date)
+                
+            if status and status.strip():
+                conditions.append("access_log.status = ?")
+                params.append(status)
+
+
+            # Costruzione WHERE dinamica
+            if conditions:
+                base_query += " WHERE " + " AND ".join(conditions)
+
+            # Ordinamento e limite
+            base_query += """
+                ORDER BY access_log.timestamp DESC
+                LIMIT ?
+            """
+
+            params.append(limit)
+
+            cursor.execute(base_query, params)
 
             return [dict(row) for row in cursor.fetchall()]
+
 
         except Exception as e:
             print(f"❌ Errore recupero storico: {e}")

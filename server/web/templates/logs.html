@@ -49,6 +49,20 @@
                     <option value="expired" {% if request.args.get('status') == 'expired' %}selected{% endif %}>Scaduto</option>
                 </select>
             </div>
+
+            <div class="col-md-3">
+    <label for="selected_date" class="form-label fw-semibold">
+        Seleziona data
+    </label>
+    <input type="date"
+       id="selected_date"
+       name="selected_date"
+       class="form-control"
+       value="{{ selected_date }}"
+       max="{{ today }}">
+
+</div>
+
             
             <div class="col-md-4">
     <label for="limit" class="form-label fw-semibold">Numero log</label>

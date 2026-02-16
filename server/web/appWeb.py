@@ -16,6 +16,7 @@ try:
         login_required,
         current_user,
     )
+    from datetime import date
     from authlib.integrations.flask_client import OAuth
     import requests
     import secrets
@@ -23,6 +24,8 @@ try:
     from server.database import DatabaseManager
     import server.config as config
     from server.connection.frame_receiver import receiver as frame_receiver_blueprint
+    
+
 
 
 except ImportError as e:
@@ -219,18 +222,21 @@ def logs():
     plate_number = request.args.get("plate_number", "").strip().upper()
     status = request.args.get("status", "")
     limit = int(request.args.get("limit", 50))
+    selected_date = request.args.get("selected_date", "")
+    
+    if not selected_date:
+        selected_date = date.today().isoformat()
+        
+    today = date.today().isoformat()
+
+
+
 
     
 
-    all_logs = db.get_access_history(limit=limit)
+    all_logs = db.get_access_history(limit=limit, plate_number=plate_number, date=selected_date, status=status)
 
-    # Filtri
-    if plate_number:
-        all_logs = [log for log in all_logs if plate_number in log["plate_number"]]
-    if status:
-        all_logs = [log for log in all_logs if log["status"] == status]
-
-    return render_template("logs.html", logs=all_logs, selected_limit=limit)
+    return render_template("logs.html", logs=all_logs, selected_limit=limit, selected_date = selected_date, today=today)
 
 
 @app.route("/logs/export")
