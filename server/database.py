@@ -566,6 +566,114 @@ class DatabaseManager:
         row = cursor.fetchone()
         return dict(row) if row else None
 
+
+
+
+    def get_access_history_advanced(
+        self,
+        plate_number: str = None,
+        first_name: str = None,
+        last_name: str = None,
+        role: str = None,
+        status: str = None,
+        date_single: str = None,
+        date_from: str = None,
+        date_to: str = None,
+        limit: int = 100,
+    ) -> list:
+        """
+        Recupera storico accessi con filtri avanzati.
+        Supporta filtro per nome/cognome/ruolo (JOIN con authorized_plates).
+        """
+        try:
+            cursor = self.connection.cursor()
+
+            base_query = """
+                SELECT 
+                    access_log.*,
+                    authorized_plates.first_name,
+                    authorized_plates.last_name,
+                    authorized_plates.role
+                FROM access_log
+                LEFT JOIN authorized_plates 
+                    ON access_log.plate_number = authorized_plates.plate_number
+            """
+
+            conditions = []
+            params = []
+
+            if plate_number and plate_number.strip():
+                conditions.append("access_log.plate_number = ?")
+                params.append(plate_number.upper().strip())
+
+            if status and status.strip():
+                conditions.append("access_log.status = ?")
+                params.append(status.strip())
+
+            # Data singola ha priorità sul range
+            if date_single and date_single.strip():
+                conditions.append("date(access_log.timestamp) = ?")
+                params.append(date_single.strip())
+            else:
+                if date_from and date_from.strip():
+                    conditions.append("date(access_log.timestamp) >= ?")
+                    params.append(date_from.strip())
+                if date_to and date_to.strip():
+                    conditions.append("date(access_log.timestamp) <= ?")
+                    params.append(date_to.strip())
+
+            if first_name and first_name.strip():
+                conditions.append("authorized_plates.first_name LIKE ?")
+                params.append(f"%{first_name.strip()}%")
+
+            if last_name and last_name.strip():
+                conditions.append("authorized_plates.last_name LIKE ?")
+                params.append(f"%{last_name.strip()}%")
+
+            if role and role.strip():
+                conditions.append("authorized_plates.role LIKE ?")
+                params.append(f"%{role.strip()}%")
+
+            if conditions:
+                base_query += " WHERE " + " AND ".join(conditions)
+
+            base_query += " ORDER BY access_log.timestamp DESC"
+
+            if limit and limit > 0:
+                base_query += " LIMIT ?"
+                params.append(limit)
+
+            cursor.execute(base_query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+        except Exception as e:
+            print(f"❌ Errore recupero storico avanzato: {e}")
+            return []
+
+
+    def delete_logs_by_ids(self, log_ids: list) -> int:
+        """
+        Elimina log specifici per lista di ID.
+        Returns: numero di log eliminati
+        """
+        try:
+            if not log_ids:
+                return 0
+
+            placeholders = ",".join("?" * len(log_ids))
+            cursor = self.connection.cursor()
+            cursor.execute(
+                f"DELETE FROM access_log WHERE id IN ({placeholders})",
+                log_ids,
+            )
+            self.connection.commit()
+            deleted = cursor.rowcount
+            print(f"✅ Eliminati {deleted} log selezionati")
+            return deleted
+        except Exception as e:
+            print(f"❌ Errore eliminazione log selezionati: {e}")
+            return 0
+
     # ========================================================================
     # IMPORT/EXPORT
     # ========================================================================

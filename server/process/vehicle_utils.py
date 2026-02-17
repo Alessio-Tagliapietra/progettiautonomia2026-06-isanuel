@@ -55,6 +55,9 @@ def get_car(plate_coordinates: tuple, vehicle_ids: np.ndarray) -> tuple:
 def process_vehicle_simple(
     vehicle_box: tuple, frame: np.ndarray, track_id: int, frame_count: int
 ) -> tuple:
+    
+    
+    print("==============entrato in process_vehicle_simple==========")
 
     # Estrai crop del veicolo
     vehicle_crop = extract_vehicle_crop(vehicle_box, frame)
@@ -199,7 +202,7 @@ def process_detections(
         gate_id: ID del gate
     """
 
-    for det in detections:
+    for det in detections:        
         if "track_id" not in det:
             continue
 
@@ -207,6 +210,7 @@ def process_detections(
 
         # veicolo già controllato, usa risultato salvato
         if track_id in checked_vehicles:
+            print(f"   ✅ Veicolo {track_id} già controllato")
             status, plate_text, plate_info = checked_vehicles[track_id]
             det["label"] = status
             det["plate_text"] = plate_text

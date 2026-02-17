@@ -218,75 +218,141 @@ def delete_plate(plate_number):
 @app.route("/logs")
 @login_required
 def logs():
-
-    plate_number = request.args.get("plate_number", "").strip().upper()
-    status = request.args.get("status", "")
-    selected_date = request.args.get("selected_date", "")
-    
-    if not selected_date:
-        selected_date = date.today().isoformat()
-        
+    selected_date = request.args.get("selected_date", "").strip()
     today = date.today().isoformat()
 
+    if not selected_date:
+        selected_date = today
+
+    # Solo accessi con status "authorized"
+    all_logs = db.get_access_history(
+        date=selected_date,
+        status="authorized"
+    )
+
+    return render_template("logs.html", logs=all_logs, selected_date=selected_date, today=today)
 
 
 
-    
-
-    all_logs = db.get_access_history(plate_number=plate_number, date=selected_date, status=status)
-
-    return render_template("logs.html", logs=all_logs, selected_date = selected_date, today=today)
 
 
-@app.route("/logs/export")
+@app.route("/logs/storico")
 @login_required
-def export_logs():
-    """Esporta i log in formato CSV"""
+def logs_storico():
+    today = date.today().isoformat()
+
+    filters = {
+        "plate_number": request.args.get("plate_number", "").strip().upper(),
+        "first_name":   request.args.get("first_name", "").strip(),
+        "last_name":    request.args.get("last_name", "").strip(),
+        "role":         request.args.get("role", "").strip(),
+        "status":       request.args.get("status", "").strip(),
+        "date_single":  request.args.get("date_single", "").strip(),
+        "date_from":    request.args.get("date_from", "").strip(),
+        "date_to":      request.args.get("date_to", "").strip(),
+        "limit":        request.args.get("limit", "100").strip(),
+    }
+
+    limit_val = int(filters["limit"]) if filters["limit"].isdigit() else 100
+
+    all_logs = db.get_access_history_advanced(
+        plate_number=filters["plate_number"] or None,
+        first_name=filters["first_name"] or None,
+        last_name=filters["last_name"] or None,
+        role=filters["role"] or None,
+        status=filters["status"] or None,
+        date_single=filters["date_single"] or None,
+        date_from=filters["date_from"] or None,
+        date_to=filters["date_to"] or None,
+        limit=limit_val,
+    )
+
+    return render_template("logs_storico.html", logs=all_logs, filters=filters, today=today)
+
+
+@app.route("/logs/storico/delete", methods=["POST"])
+@login_required
+def delete_selected_logs():
+    """Elimina i log selezionati per ID"""
     try:
-        from datetime import datetime
+        log_ids = request.form.getlist("log_ids")
+        if not log_ids:
+            flash("Nessun log selezionato.", "warning")
+            return redirect(url_for("logs_storico"))
+
+        log_ids = [int(id) for id in log_ids if id.isdigit()]
+        deleted = db.delete_logs_by_ids(log_ids)
+        flash(f"Eliminati {deleted} log con successo.", "success")
+    except Exception as e:
+        flash(f"Errore durante l'eliminazione: {str(e)}", "danger")
+
+    return redirect(url_for("logs_storico"))
+
+
+@app.route("/logs/storico/export")
+@login_required
+def export_logs_filtered():
+    """Esporta i log filtrati in CSV"""
+    try:
+        from datetime import datetime as dt
         from flask import send_file
-        import tempfile
-        import os
+        import tempfile, os, csv
 
-        # Crea nome file con timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"access_logs_{timestamp}.csv"
+        today = date.today().isoformat()
+        filters = {
+            "plate_number": request.args.get("plate_number", "").strip().upper(),
+            "first_name":   request.args.get("first_name", "").strip(),
+            "last_name":    request.args.get("last_name", "").strip(),
+            "role":         request.args.get("role", "").strip(),
+            "status":       request.args.get("status", "").strip(),
+            "date_single":  request.args.get("date_single", "").strip(),
+            "date_from":    request.args.get("date_from", "").strip(),
+            "date_to":      request.args.get("date_to", "").strip(),
+            "limit":        request.args.get("limit", "0").strip(),
+        }
+        limit_val = int(filters["limit"]) if filters["limit"].isdigit() else 0
 
-        # Usa directory temporanea del sistema
-        temp_dir = tempfile.gettempdir()
-        filepath = os.path.join(temp_dir, filename)
+        logs = db.get_access_history_advanced(
+            plate_number=filters["plate_number"] or None,
+            first_name=filters["first_name"] or None,
+            last_name=filters["last_name"] or None,
+            role=filters["role"] or None,
+            status=filters["status"] or None,
+            date_single=filters["date_single"] or None,
+            date_from=filters["date_from"] or None,
+            date_to=filters["date_to"] or None,
+            limit=limit_val,
+        )
 
-        # Esporta i log usando il metodo del database
-        if db.export_logs_to_csv(filepath):
-            # Invia il file al browser per il download
-            return send_file(
-                filepath,
-                mimetype="text/csv",
-                as_attachment=True,
-                download_name=filename,
-            )
-        else:
-            flash("Nessun log da esportare", "warning")
-            return redirect(url_for("logs"))
+        if not logs:
+            flash("Nessun log da esportare con i filtri selezionati.", "warning")
+            return redirect(url_for("logs_storico"))
+
+        timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"storico_accessi_{timestamp}.csv"
+        filepath = os.path.join(tempfile.gettempdir(), filename)
+
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["ID", "Targa", "Data e Ora", "Stato", "Evento", "Nome", "Cognome", "Ruolo"])
+            for row in logs:
+                writer.writerow([
+                    row["id"],
+                    row["plate_number"],
+                    row["timestamp"],
+                    row["status"],
+                    row.get("event", ""),
+                    row.get("first_name", ""),
+                    row.get("last_name", ""),
+                    row.get("role", ""),
+                ])
+
+        return send_file(filepath, mimetype="text/csv", as_attachment=True, download_name=filename)
 
     except Exception as e:
         flash(f"Errore durante l'esportazione: {str(e)}", "danger")
-        return redirect(url_for("logs"))
+        return redirect(url_for("logs_storico"))
 
-
-@app.route("/logs/clear", methods=["POST"])
-@login_required
-def clear_logs():
-    """Elimina tutti i log di accesso"""
-    try:
-        if db.clear_access_log():
-            flash("Tutti i log sono stati eliminati con successo", "success")
-        else:
-            flash("Errore durante l'eliminazione dei log", "danger")
-    except Exception as e:
-        flash(f"Errore: {str(e)}", "danger")
-
-    return redirect(url_for("logs"))
 
 
 # ====================================

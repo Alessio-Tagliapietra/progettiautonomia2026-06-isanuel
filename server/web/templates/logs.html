@@ -5,20 +5,14 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="fw-bold mb-0">
-            <i class="bi bi-journal-text text-primary me-2"></i>Registro accessi
+            <i class="bi bi-journal-check text-success me-2"></i>Registro accessi
         </h2>
-        <p class="text-muted small mb-0">Consulta lo storico degli accessi rilevati dal sistema.</p>
+        <p class="text-muted small mb-0">Visualizza chi è entrato e uscito nella giornata selezionata.</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="{{ url_for('export_logs') }}" class="btn btn-success shadow-sm">
-            <i class="bi bi-download me-1"></i> Esporta CSV
+        <a href="{{ url_for('logs_storico') }}" class="btn btn-primary shadow-sm">
+            <i class="bi bi-archive me-1"></i> Registro storico
         </a>
-        <button type="button" 
-                class="btn btn-danger shadow-sm" 
-                data-bs-toggle="modal" 
-                data-bs-target="#clearLogsModal">
-            <i class="bi bi-trash me-1"></i> Resetta log
-        </button>
         <a href="{{ url_for('index') }}" class="btn btn-outline-secondary shadow-sm">
             <i class="bi bi-arrow-left me-1"></i> Dashboard
         </a>
@@ -29,158 +23,101 @@
 <div class="card shadow-sm mb-4 border-0">
     <div class="card-body">
         <form method="GET" action="{{ url_for('logs') }}" class="row g-3 align-items-end">
-            <div class="col-md-4">
-                <label for="plate_number" class="form-label fw-semibold">Filtra per targa</label>
-                <input type="text"
+            <div class="col-md-5">
+                <label for="selected_date" class="form-label fw-semibold">
+                    <i class="bi bi-calendar3 me-1"></i>Seleziona data
+                </label>
+                <input type="date"
+                       id="selected_date"
+                       name="selected_date"
                        class="form-control"
-                       id="plate_number"
-                       name="plate_number"
-                       placeholder="Es. AB123CD"
-                       value="{{ request.args.get('plate_number', '') }}"
-                       style="text-transform: uppercase;">
+                       value="{{ selected_date }}"
+                       max="{{ today }}">
             </div>
-
-            <div class="col-md-4">
-                <label for="status" class="form-label fw-semibold">Stato</label>
-                <select id="status" name="status" class="form-select">
-                    <option value="">Tutti</option>
-                    <option value="authorized" {% if request.args.get('status') == 'authorized' %}selected{% endif %}>Autorizzato</option>
-                    <option value="not_authorized" {% if request.args.get('status') == 'not_authorized' %}selected{% endif %}>Non autorizzato</option>
-                    <option value="expired" {% if request.args.get('status') == 'expired' %}selected{% endif %}>Scaduto</option>
-                </select>
-            </div>
-
-            <div class="col-md-3">
-    <label for="selected_date" class="form-label fw-semibold">
-        Seleziona data
-    </label>
-    <input type="date"
-       id="selected_date"
-       name="selected_date"
-       class="form-control"
-       value="{{ selected_date }}"
-       max="{{ today }}">
-
-</div>
-
-
-
             <div class="col-md-4 d-flex gap-2">
-                <button type="submit" class="btn btn-primary flex-grow-1 shadow-sm">
-                    <i class="bi bi-funnel me-1"></i> Filtra
+                <button type="submit" class="btn btn-success flex-grow-1 shadow-sm">
+                    <i class="bi bi-funnel me-1"></i> Mostra
                 </button>
                 <a href="{{ url_for('logs') }}" class="btn btn-outline-secondary shadow-sm">
-                    <i class="bi bi-x-circle me-1"></i> Reset
+                    <i class="bi bi-calendar-check me-1"></i> Oggi
                 </a>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Contatore log -->
-{% if logs and logs|length > 0 %}
-<div class="alert alert-info shadow-sm mb-3">
-    <i class="bi bi-info-circle me-2"></i>
-    Visualizzati <strong>{{ logs|length }}</strong> log di accesso
-
-    {% if request.args.get('plate_number') or request.args.get('status') %}
-    (filtrati)
-    {% endif %}
+<!-- Info giornata -->
+<div class="alert alert-success shadow-sm mb-3 d-flex align-items-center gap-2">
+    <i class="bi bi-shield-check fs-5"></i>
+    <span>
+        Accessi autorizzati del <strong>{{ selected_date }}</strong>:
+        <strong>{{ logs|length }}</strong> registrazioni
+    </span>
 </div>
-{% endif %}
 
-<!-- TABELLA LOG ACCESSI -->
+<!-- TABELLA -->
 <div class="card shadow-sm border-0">
     <div class="card-body">
         <h5 class="card-title mb-3 fw-semibold">
-            <i class="bi bi-clock-history text-primary me-2"></i>Ultimi accessi
+            <i class="bi bi-person-check text-success me-2"></i>Entrate e uscite autorizzate
         </h5>
 
         {% if logs and logs|length > 0 %}
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-primary text-dark">
+                <thead class="table-success text-dark">
                     <tr>
                         <th scope="col">#</th>
-                        <th scope="col">Data e ora</th>
+                        <th scope="col">Orario</th>
                         <th scope="col">Targa</th>
-                        <th scope="col">Stato</th>
                         <th scope="col">Evento</th>
                         <th scope="col">Intestatario</th>
+                        <th scope="col">Ruolo</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for log in logs %}
                     <tr>
-                        <td>{{ loop.index }}</td>
-                        <td>{{ log['timestamp'] | default('-') }}</td>
-                        <td class="fw-semibold text-uppercase">{{ log['plate_number'] }}</td>
+                        <td class="text-muted small">{{ loop.index }}</td>
                         <td>
-                            {% if log['status'] == 'authorized' %}
-                                <span class="badge bg-success" title="Accesso consentito">Autorizzato</span>
-                            {% elif log['status'] == 'expired' %}
-                                <span class="badge bg-warning text-dark" title="Autorizzazione scaduta">Scaduto</span>
+                            <span class="fw-semibold">{{ log['timestamp'][11:16] if log['timestamp'] else '-' }}</span>
+                            <small class="text-muted d-block">{{ log['timestamp'][:10] if log['timestamp'] else '' }}</small>
+                        </td>
+                        <td class="fw-bold text-uppercase font-monospace">{{ log['plate_number'] }}</td>
+                        <td>
+                            {% if log['event'] == 'INGRESSO' or 'entrat' in (log['event']|lower if log['event'] else '') %}
+                                <span class="badge bg-success"><i class="bi bi-box-arrow-in-right me-1"></i>{{ log['event'] or 'Ingresso' }}</span>
+                            {% elif log['event'] == 'USCITA' or 'uscit' in (log['event']|lower if log['event'] else '') %}
+                                <span class="badge bg-primary"><i class="bi bi-box-arrow-right me-1"></i>{{ log['event'] or 'Uscita' }}</span>
                             {% else %}
-                                <span class="badge bg-danger" title="Accesso negato">Non autorizzato</span>
+                                <span class="badge bg-secondary">{{ log['event'] or '-' }}</span>
                             {% endif %}
                         </td>
-                        
-                        <td>{{ log['event'] or '-' }}</td>
-
-
                         <td>
-                        {% if log['first_name'] %}
-                            <div class="fw-semibold">
-                                {{ log['first_name'] }} {{ log['last_name'] }}
-                            </div>
-                            <small class="text-muted">{{ log['role'] }}</small>
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
+                            {% if log['first_name'] %}
+                                <div class="fw-semibold">{{ log['first_name'] }} {{ log['last_name'] }}</div>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if log['role'] %}
+                                <small class="text-muted">{{ log['role'] }}</small>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
         {% else %}
-        <div class="alert alert-info text-center my-4 shadow-sm">
-            <i class="bi bi-info-circle me-2"></i>Nessun log di accesso disponibile.
+        <div class="alert alert-info text-center my-4">
+            <i class="bi bi-calendar-x me-2 fs-4"></i>
+            <div>Nessun accesso autorizzato registrato per il <strong>{{ selected_date }}</strong>.</div>
         </div>
         {% endif %}
-    </div>
-</div>
-
-
-<!-- Modal di conferma per reset log -->
-<div class="modal fade" id="clearLogsModal" tabindex="-1" aria-labelledby="clearLogsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title" id="clearLogsModalLabel">
-                    <i class="bi bi-exclamation-triangle me-2"></i>Sicuro di voler resettare i log?
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p class="mb-0">
-                    <strong>Attenzione!</strong> Resettando i logs eliminerai <u>tutti</u> i log di accesso in modo permanente.
-                </p>
-                <p class="text-muted small mt-2 mb-0">
-                    <i class="bi bi-info-circle me-1"></i>Sicuro di non voler esportare prima i dati?
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-circle me-1"></i>Annulla
-                </button>
-                <form method="POST" action="{{ url_for('clear_logs') }}" style="display: inline;">
-                    <button type="submit" class="btn btn-danger">
-                        <i class="bi bi-trash me-1"></i>Elimina tutti i log
-                    </button>
-                </form>
-            </div>
-        </div>
     </div>
 </div>
 {% endblock %}
