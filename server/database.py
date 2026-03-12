@@ -673,6 +673,235 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ Errore eliminazione log selezionati: {e}")
             return 0
+        
+        
+        
+    def get_accessi_per_giorno(self, start_date: str, end_date: str) -> list:
+        """Conta gli accessi raggruppati per giorno nel periodo dato."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT date(timestamp) AS giorno, COUNT(*) AS count
+                FROM access_log
+                WHERE date(timestamp) BETWEEN ? AND ?
+                GROUP BY giorno
+                ORDER BY giorno
+            """, (start_date, end_date))
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"❌ Errore get_accessi_per_giorno: {e}")
+            return []
+
+
+    def get_accessi_per_stato(self, start_date: str, end_date: str) -> dict:
+        """Conta gli accessi per stato (authorized, not_authorized, expired)."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT status, COUNT(*) AS count
+                FROM access_log
+                WHERE date(timestamp) BETWEEN ? AND ?
+                GROUP BY status
+            """, (start_date, end_date))
+            result = {"authorized": 0, "not_authorized": 0, "expired": 0}
+            for row in cursor.fetchall():
+                if row["status"] in result:
+                    result[row["status"]] = row["count"]
+            return result
+        except Exception as e:
+            print(f"❌ Errore get_accessi_per_stato: {e}")
+            return {"authorized": 0, "not_authorized": 0, "expired": 0}
+
+
+    def get_accessi_per_ora(self, start_date: str, end_date: str) -> list:
+        """Conta gli accessi raggruppati per ora del giorno (0–23)."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT CAST(strftime('%H', timestamp) AS INTEGER) AS ora,
+                    COUNT(*) AS count
+                FROM access_log
+                WHERE date(timestamp) BETWEEN ? AND ?
+                GROUP BY ora
+                ORDER BY ora
+            """, (start_date, end_date))
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"❌ Errore get_accessi_per_ora: {e}")
+            return []
+
+
+    def get_top_targhe(self, start_date: str, end_date: str, limit: int = 10) -> list:
+        """Restituisce le N targhe con più accessi nel periodo."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT plate_number, COUNT(*) AS count
+                FROM access_log
+                WHERE date(timestamp) BETWEEN ? AND ?
+                GROUP BY plate_number
+                ORDER BY count DESC
+                LIMIT ?
+            """, (start_date, end_date, limit))
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            print(f"❌ Errore get_top_targhe: {e}")
+            return []
+
+
+    def get_trend_per_stato(self, start_date: str, end_date: str) -> dict:
+        """
+        Restituisce il trend giornaliero separato per authorized e not_authorized.
+        Formato: {"authorized": [...], "not_authorized": [...]}
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT date(timestamp) AS giorno, status, COUNT(*) AS count
+                FROM access_log
+                WHERE date(timestamp) BETWEEN ? AND ?
+                AND status IN ('authorized', 'not_authorized')
+                GROUP BY giorno, status
+                ORDER BY giorno
+            """, (start_date, end_date))
+            result = {"authorized": [], "not_authorized": []}
+            for row in cursor.fetchall():
+                if row["status"] in result:
+                    result[row["status"]].append({
+                        "giorno": row["giorno"],
+                        "count": row["count"]
+                    })
+            return result
+        except Exception as e:
+            print(f"❌ Errore get_trend_per_stato: {e}")
+            return {"authorized": [], "not_authorized": []}
+
+
+
+    def get_kpi_entrate_uscite(self, start_date: str, end_date: str) -> dict:
+        """
+        KPI separati per entrate, uscite e veicoli presenti.
+        Filtra SOLO i log autorizzati per evitare di contare
+        i tentativi di accesso negati come entrate reali.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT
+                    SUM(CASE WHEN LOWER(event) = 'entrata' THEN 1 ELSE 0 END) AS entrate,
+                    SUM(CASE WHEN LOWER(event) = 'uscita'  THEN 1 ELSE 0 END) AS uscite
+                FROM access_log
+                WHERE status = 'authorized' OR status = 'exit'
+                AND date(timestamp) BETWEEN ? AND ?
+            """, (start_date, end_date))
+            row = dict(cursor.fetchone())
+            entrate = row.get("entrate") or 0
+            uscite  = row.get("uscite")  or 0
+            return {
+                "entrate":  entrate,
+                "uscite":   uscite,
+                "presenti": max(0, entrate - uscite),  # mai negativo
+            }
+        except Exception as e:
+            print(f"❌ Errore get_kpi_entrate_uscite: {e}")
+            return {"entrate": 0, "uscite": 0, "presenti": 0}
+
+
+    def get_distribuzione_entrate_uscite(self, start_date: str, end_date: str) -> dict:
+        """
+        Distribuzione entrate vs uscite per il Doughnut chart.
+        Solo movimenti autorizzati.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT
+                    SUM(CASE WHEN LOWER(event) = 'entrata' THEN 1 ELSE 0 END) AS entrate,
+                    SUM(CASE WHEN LOWER(event) = 'uscita'  THEN 1 ELSE 0 END) AS uscite
+                FROM access_log
+                WHERE status = 'authorized' OR status = 'exit'
+                AND date(timestamp) BETWEEN ? AND ?
+            """, (start_date, end_date))
+            row = dict(cursor.fetchone())
+            return {
+                "entrate": row.get("entrate") or 0,
+                "uscite":  row.get("uscite")  or 0,
+            }
+        except Exception as e:
+            print(f"❌ Errore get_distribuzione_entrate_uscite: {e}")
+            return {"entrate": 0, "uscite": 0}
+
+
+    def get_flusso_orario_entrate_uscite(self, start_date: str, end_date: str) -> list:
+        """
+        Flusso orario entrate vs uscite (0-23).
+        Solo movimenti autorizzati — ritorna sempre 24 elementi
+        anche per le ore senza eventi.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT
+                    CAST(strftime('%H', timestamp) AS INTEGER) AS ora,
+                    SUM(CASE WHEN LOWER(event) = 'entrata' THEN 1 ELSE 0 END) AS entrate,
+                    SUM(CASE WHEN LOWER(event) = 'uscita'  THEN 1 ELSE 0 END) AS uscite
+                FROM access_log
+                WHERE status = 'authorized' OR status = 'exit'
+                AND date(timestamp) BETWEEN ? AND ?
+                GROUP BY ora
+                ORDER BY ora
+            """, (start_date, end_date))
+            rows = {row["ora"]: dict(row) for row in cursor.fetchall()}
+            return [
+                {
+                    "ora":     h,
+                    "entrate": rows.get(h, {}).get("entrate") or 0,
+                    "uscite":  rows.get(h, {}).get("uscite")  or 0,
+                }
+                for h in range(24)
+            ]
+        except Exception as e:
+            print(f"❌ Errore get_flusso_orario_entrate_uscite: {e}")
+            return [{"ora": h, "entrate": 0, "uscite": 0} for h in range(24)]
+
+
+    def get_saldo_giornaliero(self, start_date: str, end_date: str) -> list:
+        """
+        Saldo giornaliero: entrate, uscite e saldo per giorno.
+        Solo movimenti autorizzati.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT
+                    date(timestamp) AS giorno,
+                    SUM(CASE WHEN LOWER(event) = 'entrata' THEN 1 ELSE 0 END) AS entrate,
+                    SUM(CASE WHEN LOWER(event) = 'uscita'  THEN 1 ELSE 0 END) AS uscite
+                FROM access_log
+                WHERE status = 'authorized' OR status = 'exit'
+                AND date(timestamp) BETWEEN ? AND ?
+                GROUP BY giorno
+                ORDER BY giorno
+            """, (start_date, end_date))
+            result = []
+            for row in cursor.fetchall():
+                entrate = row["entrate"] or 0
+                uscite  = row["uscite"]  or 0
+                result.append({
+                    "giorno":  row["giorno"],
+                    "entrate": entrate,
+                    "uscite":  uscite,
+                    "saldo":   entrate - uscite,
+                })
+            return result
+        except Exception as e:
+            print(f"❌ Errore get_saldo_giornaliero: {e}")
+            return []
+
+
+
+
+
 
     # ========================================================================
     # IMPORT/EXPORT

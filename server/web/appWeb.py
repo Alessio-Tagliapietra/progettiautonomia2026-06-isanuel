@@ -52,6 +52,10 @@ app.config["SESSION_PERMANENT"] = False
 # Database
 db = DatabaseManager(config.DATABASE_PATH)
 
+from server.process.access_tracker import access_tracker
+access_tracker.set_db(db)
+
+
 
 # login manager
 login_manager = LoginManager()
@@ -352,6 +356,65 @@ def export_logs_filtered():
     except Exception as e:
         flash(f"Errore durante l'esportazione: {str(e)}", "danger")
         return redirect(url_for("logs_storico"))
+
+
+
+@app.route("/logs/analytics")
+@login_required
+def logs_analytics():
+    from datetime import date, timedelta
+
+    today = date.today().isoformat()
+    default_start = (date.today() - timedelta(days=6)).isoformat()
+
+    start_date = request.args.get("start_date", default_start).strip()
+    end_date   = request.args.get("end_date", today).strip()
+
+    # ── Dati grafici esistenti ──────────────────────────────────────────────
+    dati_per_giorno = db.get_accessi_per_giorno(start_date, end_date)
+    dati_stato      = db.get_accessi_per_stato(start_date, end_date)
+    dati_orario     = db.get_accessi_per_ora(start_date, end_date)
+    dati_top_targhe = db.get_top_targhe(start_date, end_date, limit=10)
+    dati_trend      = db.get_trend_per_stato(start_date, end_date)
+
+    # ── Nuovi dati entrate/uscite ───────────────────────────────────────────
+    kpi_ev          = db.get_kpi_entrate_uscite(start_date, end_date)
+    dati_distrib_ev = db.get_distribuzione_entrate_uscite(start_date, end_date)
+    dati_flusso_ore = db.get_flusso_orario_entrate_uscite(start_date, end_date)
+    dati_saldo      = db.get_saldo_giornaliero(start_date, end_date)
+
+    # ── KPI aggregati totali ────────────────────────────────────────────────
+    kpi = {
+        "total":          dati_stato.get("authorized", 0)
+                        + dati_stato.get("not_authorized", 0)
+                        + dati_stato.get("expired", 0),
+        "authorized":     dati_stato.get("authorized", 0),
+        "not_authorized": dati_stato.get("not_authorized", 0),
+        "expired":        dati_stato.get("expired", 0),
+        # nuovi
+        "entrate":        kpi_ev.get("entrate", 0),
+        "uscite":         kpi_ev.get("uscite", 0),
+        "presenti":       kpi_ev.get("presenti", 0),
+    }
+
+    return render_template(
+        "logs_analytics.html",
+        start_date=start_date,
+        end_date=end_date,
+        today=today,
+        kpi=kpi,
+        # dati grafici originali
+        dati_per_giorno=dati_per_giorno,
+        dati_stato=dati_stato,
+        dati_orario=dati_orario,
+        dati_top_targhe=dati_top_targhe,
+        dati_trend=dati_trend,
+        # dati nuovi grafici entry/exit
+        dati_distrib_ev=dati_distrib_ev,
+        dati_flusso_ore=dati_flusso_ore,
+        dati_saldo=dati_saldo,
+    )
+
 
 
 

@@ -117,5 +117,14 @@ def log_plate_result(plate_text: str, status: str, confidence: float, plate_info
         print(f"⚠️  Targa SCADUTA")
         if plate_info:
             print(f"scaduta il: {plate_info.get('expiration_date')}")
+    elif status == "exit":
+        print(f"   🚪 USCITA REGISTRATA")
+        if plate_info:
+            print(
+                f"Proprietario: {plate_info.get('first_name')} "
+                f"{plate_info.get('last_name')} | "
+                f"Ruolo: {plate_info.get('role')} | "
+                f"Scadenza: {plate_info.get('expiration_date')}"
+            )   
     else:
         print(f"❌ Targa NON AUTORIZZATA")

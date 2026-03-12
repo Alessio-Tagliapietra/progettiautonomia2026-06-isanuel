@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}Registro Storico - Gestione Accessi{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-0">
+            <i class="bi bi-archive text-primary me-2"></i>Registro storico
+        </h2>
+        <p class="text-muted small mb-0">Consulta, filtra ed esporta tutti i log di accesso.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('export_logs_filtered') }}?{{ request.query_string.decode() }}" class="btn btn-success shadow-sm">
+            <i class="bi bi-download me-1"></i> Esporta CSV
+        </a>
+        <button id="btnDeleteMode" type="button" class="btn btn-danger shadow-sm">
+            <i class="bi bi-trash me-1"></i> Elimina log
+        </button>
+        <a href="{{ url_for('logs') }}" class="btn btn-outline-secondary shadow-sm">
+            <i class="bi bi-arrow-left me-1"></i> Registro accessi
+        </a>
+    </div>
+</div>
+
+<!-- FILTRI -->
+<div class="card shadow-sm mb-4 border-0">
+    <div class="card-header bg-light fw-semibold">
+        <i class="bi bi-funnel me-2"></i>Filtri di ricerca
+    </div>
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('logs_storico') }}" id="filterForm" class="row g-3">
+
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Targa</label>
+                <input type="text" class="form-control" name="plate_number"
+                       placeholder="Es. AB123CD"
+                       value="{{ filters.plate_number or '' }}"
+                       style="text-transform:uppercase;">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Nome proprietario</label>
+                <input type="text" class="form-control" name="first_name"
+                       placeholder="Nome"
+                       value="{{ filters.first_name or '' }}">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Cognome proprietario</label>
+                <input type="text" class="form-control" name="last_name"
+                       placeholder="Cognome"
+                       value="{{ filters.last_name or '' }}">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Ruolo</label>
+                <input type="text" class="form-control" name="role"
+                       placeholder="Es. Docente, Studente..."
+                       value="{{ filters.role or '' }}">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Stato</label>
+                <select name="status" class="form-select">
+                    <option value="">Tutti</option>
+                    <option value="authorized" {% if filters.status == 'authorized' %}selected{% endif %}>Autorizzato</option>
+                    <option value="not_authorized" {% if filters.status == 'not_authorized' %}selected{% endif %}>Non autorizzato</option>
+                    <option value="expired" {% if filters.status == 'expired' %}selected{% endif %}>Scaduto</option>
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">N° log da mostrare</label>
+                <select name="limit" class="form-select">
+                    <option value="100" {% if filters.limit == '100' %}selected{% endif %}>100</option>
+                    <option value="500" {% if filters.limit == '500' %}selected{% endif %}>500</option>
+                    <option value="1000" {% if filters.limit == '1000' %}selected{% endif %}>1.000</option>
+                    <option value="5000" {% if filters.limit == '5000' %}selected{% endif %}>5.000</option>
+                    <option value="0" {% if filters.limit == '0' %}selected{% endif %}>Tutti</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Data specifica</label>
+                <input type="date" class="form-control" name="date_single"
+                       value="{{ filters.date_single or '' }}"
+                       max="{{ today }}">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Data inizio</label>
+                <input type="date" class="form-control" name="date_from"
+                       value="{{ filters.date_from or '' }}"
+                       max="{{ today }}">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Data fine</label>
+                <input type="date" class="form-control" name="date_to"
+                       value="{{ filters.date_to or '' }}"
+                       max="{{ today }}">
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-search me-1"></i> Cerca
+                </button>
+                <a href="{{ url_for('logs_storico') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Contatore risultati -->
+<div class="alert {% if logs|length > 0 %}alert-info{% else %}alert-secondary{% endif %} shadow-sm mb-3 d-flex justify-content-between align-items-center">
+    <span>
+        <i class="bi bi-info-circle me-2"></i>
+        Visualizzati <strong>{{ logs|length }}</strong> log
+        {% if filters.values()|select|list|length > 0 %} (filtrati){% endif %}
+    </span>
+    <!-- Pannello eliminazione (nascosto di default) -->
+    <div id="deletePanel" class="d-none d-flex gap-2 align-items-center">
+        <span class="text-danger fw-semibold" id="selectedCount">0 selezionati</span>
+        <button type="button" id="btnSelectAll" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-check-all me-1"></i>Seleziona tutti
+        </button>
+        <button type="button" id="btnDeselectAll" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-x me-1"></i>Deseleziona
+        </button>
+        <button type="button" id="btnConfirmDelete" class="btn btn-sm btn-danger" disabled
+                data-bs-toggle="modal" data-bs-target="#confirmDeleteModal">
+            <i class="bi bi-trash me-1"></i>Elimina selezionati
+        </button>
+        <button type="button" id="btnCancelDelete" class="btn btn-sm btn-secondary">
+            Annulla
+        </button>
+    </div>
+</div>
+
+<!-- TABELLA -->
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        {% if logs and logs|length > 0 %}
+        <form id="deleteForm" method="POST" action="{{ url_for('delete_selected_logs') }}">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-primary text-dark">
+                        <tr>
+                            <th scope="col" id="checkboxCol" class="d-none" style="width:40px;">
+                                <input type="checkbox" id="selectAllHeader" class="form-check-input">
+                            </th>
+                            <th scope="col">#</th>
+                            <th scope="col">Data e ora</th>
+                            <th scope="col">Targa</th>
+                            <th scope="col">Stato</th>
+                            <th scope="col">Evento</th>
+                            <th scope="col">Intestatario</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr class="log-row">
+                            <td id="checkboxCol" class="checkbox-col d-none">
+                                <input type="checkbox" name="log_ids" value="{{ log['id'] }}"
+                                       class="form-check-input log-checkbox">
+                            </td>
+                            <td class="text-muted small">{{ loop.index }}</td>
+                            <td>
+                                <span class="fw-semibold">{{ log['timestamp'][11:16] if log['timestamp'] else '-' }}</span>
+                                <small class="text-muted d-block">{{ log['timestamp'][:10] if log['timestamp'] else '' }}</small>
+                            </td>
+                            <td class="fw-bold text-uppercase font-monospace">{{ log['plate_number'] }}</td>
+                            <td>
+                                {% if log['status'] == 'authorized' %}
+                                    <span class="badge bg-success">Autorizzato</span>
+                                {% elif log['status'] == 'expired' %}
+                                    <span class="badge bg-warning text-dark">Scaduto</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Non autorizzato</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ log['event'] or '-' }}</td>
+                            <td>
+                                {% if log['first_name'] %}
+                                    <div class="fw-semibold">{{ log['first_name'] }} {{ log['last_name'] }}</div>
+                                    <small class="text-muted">{{ log['role'] }}</small>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
+        {% else %}
+        <div class="alert alert-info text-center my-4 border-0">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+            Nessun log trovato con i filtri selezionati.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal conferma eliminazione -->
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Conferma eliminazione
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Stai per eliminare <strong id="deleteCountModal">0</strong> log in modo permanente.</p>
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-info-circle me-1"></i>Questa operazione non può essere annullata.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+                <button type="button" id="btnFinalDelete" class="btn btn-danger">
+                    <i class="bi bi-trash me-1"></i>Elimina definitivamente
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const btnDeleteMode = document.getElementById('btnDeleteMode');
+    const deletePanel = document.getElementById('deletePanel');
+    const btnSelectAll = document.getElementById('btnSelectAll');
+    const btnDeselectAll = document.getElementById('btnDeselectAll');
+    const btnCancelDelete = document.getElementById('btnCancelDelete');
+    const btnConfirmDelete = document.getElementById('btnConfirmDelete');
+    const btnFinalDelete = document.getElementById('btnFinalDelete');
+    const checkboxCols = document.querySelectorAll('.checkbox-col');
+    const checkboxHeaderCol = document.getElementById('checkboxCol');
+    const selectAllHeader = document.getElementById('selectAllHeader');
+    const selectedCountEl = document.getElementById('selectedCount');
+    const deleteCountModal = document.getElementById('deleteCountModal');
+    const deleteForm = document.getElementById('deleteForm');
+
+    function getChecked() {
+        return document.querySelectorAll('.log-checkbox:checked');
+    }
+
+    function updateCount() {
+        const count = getChecked().length;
+        selectedCountEl.textContent = count + ' selezionati';
+        deleteCountModal.textContent = count;
+        btnConfirmDelete.disabled = count === 0;
+    }
+
+    function enterDeleteMode() {
+        deletePanel.classList.remove('d-none');
+        deletePanel.classList.add('d-flex');
+        btnDeleteMode.classList.add('d-none');
+        checkboxCols.forEach(el => el.classList.remove('d-none'));
+        if (checkboxHeaderCol) checkboxHeaderCol.classList.remove('d-none');
+    }
+
+    function exitDeleteMode() {
+        deletePanel.classList.add('d-none');
+        deletePanel.classList.remove('d-flex');
+        btnDeleteMode.classList.remove('d-none');
+        checkboxCols.forEach(el => el.classList.add('d-none'));
+        if (checkboxHeaderCol) checkboxHeaderCol.classList.add('d-none');
+        document.querySelectorAll('.log-checkbox').forEach(cb => cb.checked = false);
+        if (selectAllHeader) selectAllHeader.checked = false;
+        updateCount();
+    }
+
+    btnDeleteMode.addEventListener('click', enterDeleteMode);
+    btnCancelDelete.addEventListener('click', exitDeleteMode);
+
+    btnSelectAll.addEventListener('click', function() {
+        document.querySelectorAll('.log-checkbox').forEach(cb => cb.checked = true);
+        if (selectAllHeader) selectAllHeader.checked = true;
+        updateCount();
+    });
+
+    btnDeselectAll.addEventListener('click', function() {
+        document.querySelectorAll('.log-checkbox').forEach(cb => cb.checked = false);
+        if (selectAllHeader) selectAllHeader.checked = false;
+        updateCount();
+    });
+
+    if (selectAllHeader) {
+        selectAllHeader.addEventListener('change', function() {
+            document.querySelectorAll('.log-checkbox').forEach(cb => cb.checked = this.checked);
+            updateCount();
+        });
+    }
+
+    document.querySelectorAll('.log-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateCount);
+    });
+
+    btnFinalDelete.addEventListener('click', function() {
+        if (getChecked().length > 0) {
+            deleteForm.submit();
+        }
+    });
+
+    // Mutual exclusion: data singola vs range
+    const dateSingle = document.querySelector('input[name="date_single"]');
+    const dateFrom = document.querySelector('input[name="date_from"]');
+    const dateTo = document.querySelector('input[name="date_to"]');
+
+    if (dateSingle && dateFrom && dateTo) {
+        dateSingle.addEventListener('change', function() {
+            if (this.value) {
+                dateFrom.value = '';
+                dateTo.value = '';
+            }
+        });
+        [dateFrom, dateTo].forEach(el => {
+            el.addEventListener('change', function() {
+                if (this.value) dateSingle.value = '';
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

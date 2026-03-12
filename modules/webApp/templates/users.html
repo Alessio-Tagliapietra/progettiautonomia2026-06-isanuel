@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Utenti Autorizzati{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">
+    <i class="bi bi-people-fill me-2"></i>Utenti Autorizzati
+  </h2>
+
+  {# ── Form aggiunta ── #}
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header fw-semibold">Aggiungi utente</div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('user_add') }}">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label">Email Google</label>
+            <input type="email" name="email" class="form-control"
+                   placeholder="utente@gmail.com" required>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label">Nota (facoltativa)</label>
+            <input type="text" name="note" class="form-control"
+                   placeholder="es. Admin, Tecnico…">
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+              <i class="bi bi-plus-circle me-1"></i>Aggiungi
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Tabella utenti ── #}
+  <div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Elenco utenti ({{ users|length }})</span>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-hover table-striped mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Email</th>
+            <th>Nota</th>
+            <th>Aggiunto il</th>
+            <th class="text-center">Azioni</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td class="align-middle">
+              {{ u.email }}
+              {% if u.email == session.get('user_email') %}
+                <span class="badge bg-info ms-1">tu</span>
+              {% endif %}
+            </td>
+
+            {# ── Edit nota inline ── #}
+            <td class="align-middle" style="min-width:200px">
+              <form method="POST"
+                    action="{{ url_for('user_edit_note', email=u.email) }}"
+                    class="d-flex gap-1">
+                <input type="text" name="note" value="{{ u.note }}"
+                       class="form-control form-control-sm">
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        title="Salva nota">
+                  <i class="bi bi-floppy"></i>
+                </button>
+              </form>
+            </td>
+
+            <td class="align-middle text-muted small">
+              {{ u.added_at[:10] }}
+            </td>
+
+            <td class="text-center align-middle">
+              {% if u.email != session.get('user_email') %}
+              <form method="POST"
+                    action="{{ url_for('user_delete', email=u.email) }}"
+                    onsubmit="return confirm('Rimuovere {{ u.email }}?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash"></i> Rimuovi
+                </button>
+              </form>
+              {% else %}
+                <span class="text-muted small">—</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4" class="text-center text-muted py-4">
+              Nessun utente autorizzato.
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
