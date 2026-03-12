@@ -19,7 +19,7 @@ headers = {
 }
 
 client_data = {
-    "type": "entrata",
+    "type": "uscita",
     "gate_id":"my_gate_id" #modificare sulla base dell'id del cancello
 }
 
