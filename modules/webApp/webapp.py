@@ -12,11 +12,9 @@ try:
     import secrets
 
     from modules.webApp.user import User
-    from modules.database.database import DatabaseManager
+    from modules.webApp.db_client import DbClient          
     import modules.webApp.config as config
-    import modules.webApp.mqtt_client as mqtt_client
     from modules.webApp.users_db import UsersDatabase
-
 
 except ImportError as e:
     print(f"Errore import webapp.py: {e}")
@@ -24,23 +22,24 @@ except ImportError as e:
 
 app = Flask(__name__, template_folder="templates")
 app.secret_key = config.SECRET_KEY
-app.config["SESSION_COOKIE_SECURE"]  = False
+app.config["SESSION_COOKIE_SECURE"]   = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_PERMANENT"]       = False
 
-# Database (accesso diretto)
-db = DatabaseManager(config.DATABASE_PATH)
+# ── Database via REST API ─────────────────────────────────────────────────────
+db = DbClient(config.DB_API_URL)
 
+# ── Database utenti web (accesso diretto: locale alla webapp, non esposto) ───
 users_db = UsersDatabase(config.USERS_DATABASE_PATH)
-users_db.seed(config.SEED_AUTHORIZED_USERS) 
+users_db.seed(config.SEED_AUTHORIZED_USERS)
 
-# Login manager
+# ── Login manager ─────────────────────────────────────────────────────────────
 login_manager = LoginManager()
 login_manager.login_view = "login_page"
 login_manager.init_app(app)
 
-# OAuth
+# ── OAuth ─────────────────────────────────────────────────────────────────────
 oauth = OAuth(app)
 google = oauth.register(
     name="google",
@@ -56,7 +55,7 @@ def load_user(user_id):
     return User(user_id)
 
 
-# ── Auth ───────────────────────────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────────────────────
 
 @app.route("/login")
 def login_page():
@@ -79,7 +78,7 @@ def callback():
         user_info = google.parse_id_token(token, nonce=session["nonce"])
         email     = user_info.get("email", "").lower().strip()
 
-        if not users_db.is_authorized(email): #controlla all'interno del databsae
+        if not users_db.is_authorized(email):
             flash("Non sei autorizzato ad accedere.", "danger")
             return redirect(url_for("login_page"))
 
@@ -106,7 +105,7 @@ def logout():
     return resp
 
 
-# ── Routes principali ──────────────────────────────────────────────────────
+# ── Routes principali ─────────────────────────────────────────────────────────
 
 @app.route("/")
 @login_required
@@ -141,7 +140,6 @@ def add_plate():
         try:
             result = db.add_authorized_plate(plate, first_name, last_name, role, expiration)
             if result:
-                mqtt_client.publish_plates_update("add", plate)   # notifica altri moduli
                 flash(f"Targa {plate} aggiunta con successo!", "success")
             else:
                 flash(f"Targa {plate} già esistente!", "warning")
@@ -169,7 +167,6 @@ def edit_plate(plate_number):
                 request.form["role"],
                 request.form["expiration_date"],
             )
-            mqtt_client.publish_plates_update("update", plate_number)
             flash("Targa aggiornata con successo!", "success")
             return redirect(url_for("plates"))
         except Exception as e:
@@ -183,14 +180,13 @@ def edit_plate(plate_number):
 def delete_plate(plate_number):
     try:
         db.remove_plate(plate_number)
-        mqtt_client.publish_plates_update("remove", plate_number)
         flash(f"Targa {plate_number} rimossa!", "warning")
     except Exception as e:
         flash(f"Errore: {str(e)}", "danger")
     return redirect(url_for("plates"))
 
 
-# ── Logs ────────────────────────────────────
+# ── Logs ──────────────────────────────────────────────────────────────────────
 
 @app.route("/logs")
 @login_required
@@ -268,11 +264,13 @@ def export_logs_filtered():
         filepath = os.path.join(tempfile.gettempdir(), filename)
         with open(filepath, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["ID","Targa","Data e Ora","Stato","Evento","Nome","Cognome","Ruolo"])
+            writer.writerow(["ID", "Targa", "Data e Ora", "Stato", "Evento", "Nome", "Cognome", "Ruolo"])
             for row in all_logs:
-                writer.writerow([row["id"], row["plate_number"], row["timestamp"],
-                                  row["status"], row.get("event",""),
-                                  row.get("first_name",""), row.get("last_name",""), row.get("role","")])
+                writer.writerow([
+                    row["id"], row["plate_number"], row["timestamp"],
+                    row["status"], row.get("event", ""),
+                    row.get("first_name", ""), row.get("last_name", ""), row.get("role", ""),
+                ])
         return send_file(filepath, mimetype="text/csv", as_attachment=True, download_name=filename)
 
     except Exception as e:
@@ -289,15 +287,15 @@ def logs_analytics():
     start_date    = request.args.get("start_date", default_start).strip()
     end_date      = request.args.get("end_date", today).strip()
 
-    dati_stato      = db.get_accessi_per_stato(start_date, end_date)
-    kpi_ev          = db.get_kpi_entrate_uscite(start_date, end_date)
+    dati_stato = db.get_accessi_per_stato(start_date, end_date)
+    kpi_ev     = db.get_kpi_entrate_uscite(start_date, end_date)
 
     kpi = {
-        "total":          sum(dati_stato.values()),
+        "total":    sum(dati_stato.values()),
         **dati_stato,
-        "entrate":        kpi_ev.get("entrate", 0),
-        "uscite":         kpi_ev.get("uscite", 0),
-        "presenti":       kpi_ev.get("presenti", 0),
+        "entrate":  kpi_ev.get("entrate", 0),
+        "uscite":   kpi_ev.get("uscite", 0),
+        "presenti": kpi_ev.get("presenti", 0),
     }
 
     return render_template(
@@ -313,7 +311,8 @@ def logs_analytics():
         dati_saldo=db.get_saldo_giornaliero(start_date, end_date),
     )
 
-# ── Users ────────────────────────────────────
+
+# ── Users ─────────────────────────────────────────────────────────────────────
 
 @app.route("/users")
 @login_required
@@ -360,8 +359,8 @@ def user_edit_note(email):
     flash("Nota aggiornata.", "success")
     return redirect(url_for("users_list"))
 
-# ── Entry point ────────────────────────────────────────────────────────────
+
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    mqtt_client.start()
     app.run(debug=True, use_reloader=False)
