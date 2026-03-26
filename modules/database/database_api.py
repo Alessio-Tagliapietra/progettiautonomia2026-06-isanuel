@@ -59,6 +59,26 @@ class DeleteLogsRequest(BaseModel):
     log_ids: List[int]
 
 
+class PersonCreate(BaseModel):
+    first_name: str
+    last_name: str
+    role: str
+    notes: str = ""
+
+
+class PersonUpdate(BaseModel):
+    first_name: str
+    last_name: str
+    role: str
+    notes: str = ""
+
+
+class PlateToPersonCreate(BaseModel):
+    plate_number: str
+    expiration_date: str = ""
+    notes: str = ""
+
+
 # ── Health check ──────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -242,3 +262,52 @@ def flusso_orario(start_date: str, end_date: str):
 @app.get("/analytics/saldo-giornaliero")
 def saldo_giornaliero(start_date: str, end_date: str):
     return db.get_saldo_giornaliero(start_date, end_date)
+
+
+# ── Persons ───────────────────────────────────────────────────────────────────
+
+@app.get("/persons", summary="Tutte le persone con le loro targhe")
+def get_all_persons(q: Optional[str] = None):
+    if q and q.strip():
+        return db.search_persons(q.strip())
+    return db.get_all_persons()
+
+
+@app.post("/persons", status_code=201, summary="Aggiungi persona")
+def add_person(data: PersonCreate):
+    person_id = db.add_person(data.first_name, data.last_name, data.role, data.notes)
+    if person_id < 0:
+        raise HTTPException(status_code=500, detail="Errore durante l'aggiunta della persona")
+    return {"ok": True, "person_id": person_id}
+
+
+@app.get("/persons/{person_id}", summary="Dettaglio persona")
+def get_person(person_id: int):
+    person = db.get_person(person_id)
+    if not person:
+        raise HTTPException(status_code=404, detail="Persona non trovata")
+    return person
+
+
+@app.put("/persons/{person_id}", summary="Aggiorna persona")
+def update_person(person_id: int, data: PersonUpdate):
+    ok = db.update_person(person_id, data.first_name, data.last_name, data.role, data.notes)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Persona non trovata")
+    return {"ok": True}
+
+
+@app.delete("/persons/{person_id}", summary="Elimina persona e le sue targhe")
+def delete_person(person_id: int):
+    ok = db.delete_person(person_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Persona non trovata")
+    return {"ok": True}
+
+
+@app.post("/persons/{person_id}/plates", status_code=201, summary="Aggiungi targa a persona")
+def add_plate_to_person(person_id: int, data: PlateToPersonCreate):
+    ok = db.add_plate_to_person(person_id, data.plate_number, data.expiration_date, data.notes)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Targa già esistente o persona non trovata")
+    return {"ok": True}

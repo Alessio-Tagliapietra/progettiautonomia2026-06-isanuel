@@ -12,7 +12,7 @@ try:
     import secrets
 
     from modules.webApp.user import User
-    from modules.webApp.db_client import DbClient          
+    from modules.webApp.db_client import DbClient
     import modules.webApp.config as config
     from modules.webApp.users_db import UsersDatabase
 
@@ -27,19 +27,15 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_PERMANENT"]       = False
 
-# ── Database via REST API ─────────────────────────────────────────────────────
 db = DbClient(config.DB_API_URL)
 
-# ── Database utenti web (accesso diretto: locale alla webapp, non esposto) ───
 users_db = UsersDatabase(config.USERS_DATABASE_PATH)
 users_db.seed(config.SEED_AUTHORIZED_USERS)
 
-# ── Login manager ─────────────────────────────────────────────────────────────
 login_manager = LoginManager()
 login_manager.login_view = "login_page"
 login_manager.init_app(app)
 
-# ── OAuth ─────────────────────────────────────────────────────────────────────
 oauth = OAuth(app)
 google = oauth.register(
     name="google",
@@ -120,34 +116,89 @@ def index():
 @app.route("/plates")
 @login_required
 def plates():
-    return render_template("plates.html", plates=db.get_all_plates())
+    query = request.args.get("q", "").strip()
+    persons = db.search_persons(query) if query else db.get_all_persons()
+    return render_template("plates.html", persons=persons, query=query)
 
 
-@app.route("/add_plate", methods=["GET", "POST"])
+# ── Persone ───────────────────────────────────────────────────────────────────
+
+@app.route("/person/add", methods=["POST"])
 @login_required
-def add_plate():
-    if request.method == "POST":
-        plate      = request.form["plate_number"].strip().upper()
-        first_name = request.form["first_name"]
-        last_name  = request.form["last_name"]
-        role       = request.form["role"]
-        expiration = request.form["expiration_date"]
+def add_person():
+    first_name = request.form.get("first_name", "").strip()
+    last_name  = request.form.get("last_name", "").strip()
+    role       = request.form.get("role", "").strip()
+    notes      = request.form.get("notes", "").strip()
 
-        if not plate or len(plate) < 6:
-            flash("Numero targa non valido!", "danger")
-            return render_template("add_plate.html")
+    if not first_name or not last_name or not role:
+        flash("Nome, cognome e ruolo sono obbligatori.", "danger")
+        return redirect(url_for("plates"))
 
-        try:
-            result = db.add_authorized_plate(plate, first_name, last_name, role, expiration)
-            if result:
-                flash(f"Targa {plate} aggiunta con successo!", "success")
-            else:
-                flash(f"Targa {plate} già esistente!", "warning")
-            return redirect(url_for("plates"))
-        except Exception as e:
-            flash(f"Errore: {str(e)}", "danger")
+    person_id = db.add_person(first_name, last_name, role, notes)
+    if person_id > 0:
+        flash(f"Persona {first_name} {last_name} aggiunta.", "success")
+    else:
+        flash("Errore durante l'aggiunta della persona.", "danger")
+    return redirect(url_for("plates"))
 
-    return render_template("add_plate.html")
+
+@app.route("/person/<int:person_id>/edit", methods=["POST"])
+@login_required
+def edit_person(person_id):
+    first_name = request.form.get("first_name", "").strip()
+    last_name  = request.form.get("last_name", "").strip()
+    role       = request.form.get("role", "").strip()
+    notes      = request.form.get("notes", "").strip()
+
+    if not first_name or not last_name or not role:
+        flash("Nome, cognome e ruolo sono obbligatori.", "danger")
+        return redirect(url_for("plates"))
+
+    if db.update_person(person_id, first_name, last_name, role, notes):
+        flash("Persona aggiornata con successo.", "success")
+    else:
+        flash("Errore durante l'aggiornamento.", "danger")
+    return redirect(url_for("plates"))
+
+
+@app.route("/person/<int:person_id>/delete", methods=["POST"])
+@login_required
+def delete_person(person_id):
+    person = db.get_person(person_id)
+    if person:
+        n_plates = len(person.get("plates", []))
+        if db.delete_person(person_id):
+            flash(
+                f"Persona {person['first_name']} {person['last_name']} eliminata "
+                f"insieme a {n_plates} targa/targhe.",
+                "warning",
+            )
+        else:
+            flash("Errore durante l'eliminazione.", "danger")
+    else:
+        flash("Persona non trovata.", "danger")
+    return redirect(url_for("plates"))
+
+
+# ── Targhe ────────────────────────────────────────────────────────────────────
+
+@app.route("/person/<int:person_id>/add_plate", methods=["POST"])
+@login_required
+def add_plate_to_person(person_id):
+    plate_number    = request.form.get("plate_number", "").strip().upper()
+    expiration_date = request.form.get("expiration_date", "").strip()
+    notes           = request.form.get("notes", "").strip()
+
+    if not plate_number or len(plate_number) < 6:
+        flash("Numero targa non valido.", "danger")
+        return redirect(url_for("plates"))
+
+    if db.add_plate_to_person(person_id, plate_number, expiration_date, notes):
+        flash(f"Targa {plate_number} aggiunta.", "success")
+    else:
+        flash(f"Targa {plate_number} già esistente o errore.", "warning")
+    return redirect(url_for("plates"))
 
 
 @app.route("/edit_plate/<plate_number>", methods=["GET", "POST"])
@@ -183,6 +234,12 @@ def delete_plate(plate_number):
         flash(f"Targa {plate_number} rimossa!", "warning")
     except Exception as e:
         flash(f"Errore: {str(e)}", "danger")
+    return redirect(url_for("plates"))
+
+
+@app.route("/add_plate", methods=["GET", "POST"])
+@login_required
+def add_plate():
     return redirect(url_for("plates"))
 
 

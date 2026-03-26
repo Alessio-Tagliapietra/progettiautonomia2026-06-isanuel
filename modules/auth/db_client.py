@@ -202,6 +202,70 @@ class DbClient:
     def get_saldo_giornaliero(self, start_date: str, end_date: str) -> List[Dict]:
         return self._get("/analytics/saldo-giornaliero", {"start_date": start_date, "end_date": end_date})
 
+    # ── Persons ───────────────────────────────────────────────────────────────
+
+    def get_all_persons(self) -> List[Dict]:
+        return self._get("/persons")
+
+    def search_persons(self, query: str) -> List[Dict]:
+        return self._get("/persons", params={"q": query})
+
+    def get_person(self, person_id: int) -> Optional[Dict]:
+        try:
+            return self._get(f"/persons/{person_id}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    def add_person(self, first_name: str, last_name: str, role: str, notes: str = "") -> int:
+        try:
+            data = self._post("/persons", json={
+                "first_name": first_name,
+                "last_name": last_name,
+                "role": role,
+                "notes": notes,
+            })
+            return data.get("person_id", -1)
+        except Exception:
+            return -1
+
+    def update_person(self, person_id: int, first_name: str, last_name: str, role: str, notes: str = "") -> bool:
+        try:
+            self._put(f"/persons/{person_id}", json={
+                "first_name": first_name,
+                "last_name": last_name,
+                "role": role,
+                "notes": notes,
+            })
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return False
+            raise
+
+    def delete_person(self, person_id: int) -> bool:
+        try:
+            self._delete(f"/persons/{person_id}")
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return False
+            raise
+
+    def add_plate_to_person(self, person_id: int, plate_number: str, expiration_date: str = "", notes: str = "") -> bool:
+        try:
+            self._post(f"/persons/{person_id}/plates", json={
+                "plate_number": plate_number,
+                "expiration_date": expiration_date,
+                "notes": notes,
+            })
+            return True
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 409:
+                return False
+            raise
+
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     def close(self):

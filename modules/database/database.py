@@ -33,22 +33,45 @@ class DatabaseManager:
 
         cursor = self.connection.cursor()
 
+        # ===== Tabella persone autorizzate =====
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS persons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                first_name TEXT NOT NULL,
+                last_name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                notes TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+
         # ===== Tabella principale autorizzazioni =====
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS authorized_plates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 plate_number TEXT NOT NULL UNIQUE,
+                person_id INTEGER,
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL,
                 role TEXT NOT NULL,
                 expiration_date DATE NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                notes TEXT
+                notes TEXT,
+                FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
             )
         """
         )
+
+        # Migrazione: aggiungi colonna person_id se non esiste (per DB già esistenti)
+        try:
+            cursor.execute("ALTER TABLE authorized_plates ADD COLUMN person_id INTEGER")
+            self.connection.commit()
+        except Exception:
+            pass  # colonna già presente
 
         # ===== Tabella log accessi =====
         cursor.execute(
@@ -524,6 +547,178 @@ class DatabaseManager:
         except Exception as e:
             print(f"❌ Errore calcolo statistiche: {e}")
             return {}
+
+    # ========================================================================
+    # GESTIONE PERSONE
+    # ========================================================================
+
+    def add_person(self, first_name: str, last_name: str, role: str, notes: str = "") -> int:
+        """
+        Aggiunge una persona al database.
+        Returns: id della persona inserita, oppure -1 in caso di errore.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                """
+                INSERT INTO persons (first_name, last_name, role, notes)
+                VALUES (?, ?, ?, ?)
+                """,
+                (first_name.strip(), last_name.strip(), role.strip(), notes.strip()),
+            )
+            self.connection.commit()
+            person_id = cursor.lastrowid
+            print(f"✅ Persona aggiunta: {first_name} {last_name} (id={person_id})")
+            return person_id
+        except Exception as e:
+            print(f"❌ Errore aggiunta persona: {e}")
+            return -1
+
+    def get_all_persons(self) -> List[Dict]:
+        """
+        Ritorna tutte le persone con le relative targhe.
+        Ogni persona ha un campo 'plates' con la lista delle targhe.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "SELECT * FROM persons ORDER BY last_name, first_name"
+            )
+            persons = [dict(row) for row in cursor.fetchall()]
+
+            for person in persons:
+                cursor.execute(
+                    "SELECT * FROM authorized_plates WHERE person_id = ? ORDER BY plate_number",
+                    (person["id"],),
+                )
+                person["plates"] = [dict(r) for r in cursor.fetchall()]
+
+            return persons
+        except Exception as e:
+            print(f"❌ Errore recupero persone: {e}")
+            return []
+
+    def get_person(self, person_id: int) -> Optional[Dict]:
+        """Ritorna una persona con le sue targhe."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT * FROM persons WHERE id = ?", (person_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            person = dict(row)
+            cursor.execute(
+                "SELECT * FROM authorized_plates WHERE person_id = ? ORDER BY plate_number",
+                (person_id,),
+            )
+            person["plates"] = [dict(r) for r in cursor.fetchall()]
+            return person
+        except Exception as e:
+            print(f"❌ Errore recupero persona: {e}")
+            return None
+
+    def update_person(self, person_id: int, first_name: str, last_name: str, role: str, notes: str = "") -> bool:
+        """Aggiorna i dati anagrafici di una persona."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                """
+                UPDATE persons SET first_name=?, last_name=?, role=?, notes=?
+                WHERE id=?
+                """,
+                (first_name.strip(), last_name.strip(), role.strip(), notes.strip(), person_id),
+            )
+            # Aggiorna anche le targhe collegate (denormalizzazione per compatibilità)
+            cursor.execute(
+                """
+                UPDATE authorized_plates SET first_name=?, last_name=?, role=?
+                WHERE person_id=?
+                """,
+                (first_name.strip(), last_name.strip(), role.strip(), person_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount >= 0
+        except Exception as e:
+            print(f"❌ Errore aggiornamento persona: {e}")
+            return False
+
+    def delete_person(self, person_id: int) -> bool:
+        """Elimina una persona e tutte le sue targhe."""
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(
+                "DELETE FROM authorized_plates WHERE person_id = ?", (person_id,)
+            )
+            cursor.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+            self.connection.commit()
+            print(f"✅ Persona {person_id} eliminata con le sue targhe")
+            return True
+        except Exception as e:
+            print(f"❌ Errore eliminazione persona: {e}")
+            return False
+
+    def add_plate_to_person(self, person_id: int, plate_number: str, expiration_date: str = "", notes: str = "") -> bool:
+        """
+        Aggiunge una targa a una persona esistente.
+        Recupera nome/cognome/ruolo dalla persona.
+        """
+        try:
+            person = self.get_person(person_id)
+            if not person:
+                return False
+
+            plate_number = plate_number.upper().strip()
+            cursor = self.connection.cursor()
+            cursor.execute(
+                """
+                INSERT INTO authorized_plates
+                (plate_number, person_id, first_name, last_name, role, expiration_date, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    plate_number,
+                    person_id,
+                    person["first_name"],
+                    person["last_name"],
+                    person["role"],
+                    expiration_date,
+                    notes,
+                ),
+            )
+            self.connection.commit()
+            print(f"✅ Targa {plate_number} aggiunta a persona {person_id}")
+            return True
+        except sqlite3.IntegrityError:
+            print(f"⚠️ Targa {plate_number} già presente")
+            return False
+        except Exception as e:
+            print(f"❌ Errore aggiunta targa a persona: {e}")
+            return False
+
+    def search_persons(self, query: str) -> List[Dict]:
+        """Ricerca persone per nome o cognome (case-insensitive)."""
+        try:
+            cursor = self.connection.cursor()
+            q = f"%{query.strip()}%"
+            cursor.execute(
+                """
+                SELECT * FROM persons
+                WHERE first_name LIKE ? OR last_name LIKE ?
+                ORDER BY last_name, first_name
+                """,
+                (q, q),
+            )
+            persons = [dict(row) for row in cursor.fetchall()]
+            for person in persons:
+                cursor.execute(
+                    "SELECT * FROM authorized_plates WHERE person_id = ? ORDER BY plate_number",
+                    (person["id"],),
+                )
+                person["plates"] = [dict(r) for r in cursor.fetchall()]
+            return persons
+        except Exception as e:
+            print(f"❌ Errore ricerca persone: {e}")
+            return []
 
     # ========================================================================
     # ALTRI METODI PER SITO

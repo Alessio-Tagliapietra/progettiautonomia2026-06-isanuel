@@ -1,78 +1,353 @@
 {% extends "base.html" %}
-{% block title %}Targhe autorizzate - Gestione Accessi{% endblock %}
+{% block title %}Persone autorizzate - Gestione Accessi{% endblock %}
 
 {% block content %}
+
+{# ── Header ── #}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h2 class="mb-0 fw-bold">
-            <i class="bi bi-list-ul text-primary"></i> Targhe autorizzate
+            <i class="bi bi-people-fill text-primary me-1"></i> Persone autorizzate
         </h2>
-        <p class="text-muted small mb-0">Gestisci l'elenco delle targhe con accesso autorizzato.</p>
+        <p class="text-muted small mb-0">Gestisci le persone e le targhe collegate al loro accesso.</p>
     </div>
-    <a href="{{ url_for('add_plate') }}" class="btn btn-success shadow-sm">
-        <i class="bi bi-plus-circle me-1"></i> Aggiungi nuova targa
-    </a>
+    <button class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAddPerson">
+        <i class="bi bi-person-plus-fill me-1"></i> Nuova persona
+    </button>
 </div>
 
-{% if plates %}
-<div class="card shadow-sm border-0">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-primary text-dark">
-                    <tr>
-                        <th scope="col">Targa</th>
-                        <th scope="col">Nome</th>
-                        <th scope="col">Cognome</th>
-                        <th scope="col">Ruolo</th>
-                        <th scope="col">Scadenza</th>
-                        <th scope="col" class="text-center">Azioni</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for plate in plates %}
-                    <tr>
-                        <td class="fw-semibold text-uppercase">{{ plate['plate_number'] }}</td>
-                        <td>{{ plate['first_name'] or '-' }}</td>
-                        <td>{{ plate['last_name'] or '-' }}</td>
-                        <td>
-                            {% if plate['role'] %}
-                                <span class="badge bg-secondary">{{ plate['role'] }}</span>
-                            {% else %}
-                                <span class="text-muted small">N/D</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if plate['expiration_date'] %}
-                                <span class="text-nowrap">{{ plate['expiration_date'] }}</span>
-                            {% else %}
-                                <span class="text-muted">Nessuna</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-center">
-                            <a href="{{ url_for('edit_plate', plate_number=plate['plate_number']) }}" 
-                               class="btn btn-sm btn-outline-primary me-1" title="Modifica">
-                                <i class="bi bi-pencil-square"></i>
-                            </a>
-                            <form action="{{ url_for('delete_plate', plate_number=plate['plate_number']) }}" 
-                                  method="post" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" 
-                                        title="Elimina"
-                                        onclick="return confirm('Vuoi davvero eliminare questa targa?');">
-                                    <i class="bi bi-trash3"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+{# ── Barra di ricerca ── #}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body py-3">
+        <form method="GET" action="{{ url_for('plates') }}" class="row g-2 align-items-center">
+            <div class="col">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0">
+                        <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" name="q" class="form-control border-start-0"
+                           placeholder="Cerca per nome o cognome..."
+                           value="{{ query }}">
+                </div>
+            </div>
+            <div class="col-auto d-flex gap-2">
+                <button type="submit" class="btn btn-primary shadow-sm">Cerca</button>
+                {% if query %}
+                <a href="{{ url_for('plates') }}" class="btn btn-outline-secondary shadow-sm">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ── Lista persone ── #}
+{% if persons %}
+    {% for person in persons %}
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+
+            {# Riga persona #}
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="icon-circle bg-primary bg-opacity-10 text-primary flex-shrink-0"
+                         style="width:46px;height:46px;font-size:1.2rem;">
+                        <i class="bi bi-person-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-bold fs-6">
+                            {{ person['last_name'] }} {{ person['first_name'] }}
+                        </div>
+                        <span class="badge bg-secondary me-1">{{ person['role'] }}</span>
+                        {% if person['notes'] %}
+                            <small class="text-muted">{{ person['notes'] }}</small>
+                        {% endif %}
+                        <div class="text-muted small mt-1">
+                            <i class="bi bi-car-front me-1"></i>
+                            <strong>{{ person['plates']|length }}</strong>
+                            targa{% if person['plates']|length != 1 %}he{% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                {# Azioni persona #}
+                <div class="d-flex gap-2 flex-shrink-0">
+                    <button class="btn btn-sm btn-outline-success shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalAddPlate{{ person['id'] }}"
+                            title="Aggiungi targa">
+                        <i class="bi bi-plus-circle me-1"></i> Aggiungi targa
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalEditPerson{{ person['id'] }}"
+                            title="Modifica persona">
+                        <i class="bi bi-pencil-square"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalDeletePerson{{ person['id'] }}"
+                            title="Elimina persona">
+                        <i class="bi bi-trash3"></i>
+                    </button>
+                </div>
+            </div>
+
+            {# Targhe della persona #}
+            {% if person['plates'] %}
+            <div class="mt-3 ps-2">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle mb-0">
+                        <thead class="table-light text-muted small">
+                            <tr>
+                                <th scope="col">Targa</th>
+                                <th scope="col">Scadenza</th>
+                                <th scope="col">Note</th>
+                                <th scope="col" class="text-center">Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for plate in person['plates'] %}
+                            <tr>
+                                <td class="fw-semibold font-monospace text-uppercase">
+                                    {{ plate['plate_number'] }}
+                                </td>
+                                <td>
+                                    {% if plate['expiration_date'] %}
+                                        <span class="text-nowrap">{{ plate['expiration_date'] }}</span>
+                                    {% else %}
+                                        <span class="text-muted small">Nessuna</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted small">{{ plate['notes'] or '—' }}</td>
+                                <td class="text-center">
+                                    <a href="{{ url_for('edit_plate', plate_number=plate['plate_number']) }}"
+                                       class="btn btn-sm btn-outline-primary me-1" title="Modifica targa">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                    <form action="{{ url_for('delete_plate', plate_number=plate['plate_number']) }}"
+                                          method="post" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                title="Elimina targa"
+                                                onclick='return confirm("Rimuovere la targa {{ plate["plate_number"] | tojson }}?");'>
+                                            <i class="bi bi-trash3"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="mt-3 ps-2">
+                <span class="text-muted small fst-italic">
+                    <i class="bi bi-info-circle me-1"></i>Nessuna targa associata a questa persona.
+                </span>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+    {# ── Modal: aggiungi targa ── #}
+    <div class="modal fade" id="modalAddPlate{{ person['id'] }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-semibold">
+                        <i class="bi bi-plus-circle text-success me-2"></i>
+                        Aggiungi targa — {{ person['first_name'] }} {{ person['last_name'] }}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('add_plate_to_person', person_id=person['id']) }}">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Numero targa</label>
+                            <input type="text" name="plate_number" class="form-control"
+                                   placeholder="Es. AB123CD"
+                                   pattern="^[A-HJ-NPR-TV-Za-hj-npr-tv-z]{2}[0-9]{3}[A-HJ-NPR-TV-Za-hj-npr-tv-z]{2}$"
+                                   title="Formato targa italiano: 2 lettere, 3 cifre, 2 lettere"
+                                   maxlength="7" style="text-transform:uppercase" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Data di scadenza</label>
+                            <input type="date" name="expiration_date" class="form-control">
+                            <div class="form-text">Lascia vuoto se non ha scadenza.</div>
+                        </div>
+                        <div class="mb-1">
+                            <label class="form-label fw-semibold">Note (facoltative)</label>
+                            <input type="text" name="notes" class="form-control"
+                                   placeholder="Es. Auto aziendale">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle me-1"></i>Salva targa
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# ── Modal: modifica persona ── #}
+    <div class="modal fade" id="modalEditPerson{{ person['id'] }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-semibold">
+                        <i class="bi bi-pencil-square text-primary me-2"></i>Modifica persona
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('edit_person', person_id=person['id']) }}">
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">Nome</label>
+                                <input type="text" name="first_name" class="form-control"
+                                       value="{{ person['first_name'] }}" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">Cognome</label>
+                                <input type="text" name="last_name" class="form-control"
+                                       value="{{ person['last_name'] }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Ruolo</label>
+                                <select name="role" class="form-select" required>
+                                    {% for r in ['Dirigente','Collaboratore','Docente','Personale_ATA','Studente','Altro'] %}
+                                    <option value="{{ r }}" {% if person['role'] == r %}selected{% endif %}>{{ r }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Note</label>
+                                <input type="text" name="notes" class="form-control"
+                                       value="{{ person['notes'] or '' }}"
+                                       placeholder="Note facoltative">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i>Salva modifiche
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# ── Modal: elimina persona ── #}
+    <div class="modal fade" id="modalDeletePerson{{ person['id'] }}" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-semibold text-danger">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Elimina persona
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1">Stai per eliminare:</p>
+                    <p class="fw-bold fs-6 mb-1">{{ person['first_name'] }} {{ person['last_name'] }}</p>
+                    {% if person['plates'] %}
+                    <div class="alert alert-warning py-2 mb-0 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Verranno eliminate anche le <strong>{{ person['plates']|length }}</strong>
+                        targa{% if person['plates']|length != 1 %}he{% endif %} collegate:
+                        {% for p in person['plates'] %}
+                            <span class="font-monospace">{{ p['plate_number'] }}</span>{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-0">Questa persona non ha targhe collegate.</p>
+                    {% endif %}
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <form method="POST" action="{{ url_for('delete_person', person_id=person['id']) }}" class="d-inline">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash3 me-1"></i>Elimina definitivamente
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% endfor %}
+
+{% else %}
+    <div class="alert alert-info shadow-sm mt-2">
+        <i class="bi bi-info-circle me-2"></i>
+        {% if query %}
+            Nessuna persona trovata per "<strong>{{ query }}</strong>".
+        {% else %}
+            Nessuna persona autorizzata presente. Usa il pulsante "Nuova persona" per aggiungerne una.
+        {% endif %}
+    </div>
+{% endif %}
+
+
+{# ── Modal: nuova persona ── #}
+<div class="modal fade" id="modalAddPerson" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-semibold">
+                    <i class="bi bi-person-plus-fill text-success me-2"></i>Aggiungi persona
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('add_person') }}">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Nome</label>
+                            <input type="text" name="first_name" class="form-control"
+                                   placeholder="Mario" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Cognome</label>
+                            <input type="text" name="last_name" class="form-control"
+                                   placeholder="Rossi" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Ruolo</label>
+                            <select name="role" class="form-select" required>
+                                <option value="" disabled selected>Seleziona un ruolo...</option>
+                                <option value="Dirigente">Dirigente</option>
+                                <option value="Collaboratore">Collaboratore</option>
+                                <option value="Docente">Docente</option>
+                                <option value="Personale_ATA">Personale ATA</option>
+                                <option value="Studente">Studente</option>
+                                <option value="Altro">Altro</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Note (facoltative)</label>
+                            <input type="text" name="notes" class="form-control"
+                                   placeholder="Es. Referente sicurezza">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-1"></i>Crea persona
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
-{% else %}
-<div class="alert alert-info shadow-sm mt-4">
-    <i class="bi bi-info-circle"></i> Nessuna targa autorizzata presente nel database.
-</div>
-{% endif %}
+
 {% endblock %}
