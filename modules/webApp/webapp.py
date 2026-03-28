@@ -211,15 +211,17 @@ def edit_plate(plate_number):
 
     if request.method == "POST":
         try:
+            new_plate = request.form.get("new_plate_number", "").strip().upper()
             db.update_plate(
                 plate_number,
-                request.form["first_name"],
-                request.form["last_name"],
-                request.form["role"],
-                request.form["expiration_date"],
+                request.form.get("expiration_date", ""),
+                request.form.get("notes", ""),
+                new_plate_number=new_plate if new_plate != plate_number.upper() else None,
             )
             flash("Targa aggiornata con successo!", "success")
             return redirect(url_for("plates"))
+        except ValueError as e:
+            flash(str(e), "danger")
         except Exception as e:
             flash(f"Errore: {str(e)}", "danger")
 
