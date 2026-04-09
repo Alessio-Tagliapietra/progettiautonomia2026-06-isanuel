@@ -15,12 +15,14 @@ try:
     from modules.webApp.db_client import DbClient
     import modules.webApp.config as config
     from modules.webApp.users_db import UsersDatabase
+    from modules.webApp.service_controller import service, WEEKDAY_NAMES
 
 except ImportError as e:
     print(f"Errore import webapp.py: {e}")
 
 
 app = Flask(__name__, template_folder="templates")
+app.jinja_env.filters['enumerate'] = enumerate
 app.secret_key = config.SECRET_KEY
 app.config["SESSION_COOKIE_SECURE"]   = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -418,6 +420,130 @@ def user_edit_note(email):
     flash("Nota aggiornata.", "success")
     return redirect(url_for("users_list"))
 
+@app.route("/service")
+@login_required
+def service_page():
+    from datetime import date as ddate
+    today = ddate.today()
+    status = service.get_status()
+    # Calendario del mese corrente
+    cal = service.get_calendar_month(today.year, today.month)
+    return render_template(
+        "service.html",
+        status=status,
+        weekday_names=WEEKDAY_NAMES,
+        calendar=cal,
+        cal_year=today.year,
+        cal_month=today.month,
+        today=today.isoformat(),
+    )
+ 
+ 
+@app.route("/service/calendar")
+@login_required
+def service_calendar_json():
+    """Dati calendario per un mese (AJAX). ?year=2026&month=4"""
+    from flask import jsonify
+    try:
+        year  = int(request.args.get("year",  __import__("datetime").date.today().year))
+        month = int(request.args.get("month", __import__("datetime").date.today().month))
+        return jsonify(service.get_calendar_month(year, month))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+ 
+ 
+@app.route("/service/override", methods=["POST"])
+@login_required
+def service_override():
+    action = request.form.get("action")
+    if action == "activate":
+        service.set_manual_override(True)
+        flash("Servizio attivato manualmente.", "success")
+    elif action == "deactivate":
+        service.set_manual_override(False)
+        flash("Servizio disattivato manualmente.", "warning")
+    elif action == "auto":
+        service.set_manual_override(None)
+        flash("Servizio impostato su automatico.", "info")
+    else:
+        flash("Azione non riconosciuta.", "danger")
+    return redirect(url_for("service_page"))
+ 
+ 
+@app.route("/service/weekly", methods=["POST"])
+@login_required
+def service_weekly_save():
+    """
+    Salva il template settimanale.
+    Form: per ogni giorno (0-6) un campo JSON con la lista di fasce.
+    Esempio: day_0 = '[{"start":"07:40","end":"08:00"},{"start":"12:00","end":"12:30"}]'
+    """
+    import json as _json
+    try:
+        for d in range(7):
+            raw = request.form.get(f"day_{d}", "[]").strip()
+            slots = _json.loads(raw) if raw else []
+            # Validazione minima
+            clean = []
+            for s in slots:
+                if s.get("start") and s.get("end") and s["start"] < s["end"]:
+                    clean.append({"start": s["start"], "end": s["end"]})
+            service.set_weekly_day(d, clean)
+        flash("Template settimanale salvato.", "success")
+    except Exception as e:
+        flash(f"Errore: {str(e)}", "danger")
+    return redirect(url_for("service_page"))
+ 
+ 
+@app.route("/service/day-override", methods=["POST"])
+@login_required
+def service_day_override():
+    """
+    Imposta o rimuove un override per una data specifica.
+    Form: date (YYYY-MM-DD), slots (JSON array), action (set|remove)
+    """
+    import json as _json
+    try:
+        date_str = request.form.get("date", "").strip()
+        action   = request.form.get("action", "set")
+ 
+        if not date_str:
+            flash("Data mancante.", "danger")
+            return redirect(url_for("service_page"))
+ 
+        if action == "remove":
+            service.remove_day_override(date_str)
+            flash(f"Override rimosso per {date_str}.", "info")
+        else:
+            raw   = request.form.get("slots", "[]").strip()
+            slots = _json.loads(raw) if raw else []
+            clean = []
+            for s in slots:
+                if s.get("start") and s.get("end") and s["start"] < s["end"]:
+                    clean.append({"start": s["start"], "end": s["end"]})
+            service.set_day_override(date_str, clean)
+            label = "chiuso" if not clean else f"{len(clean)} fascia/e"
+            flash(f"Override impostato per {date_str}: {label}.", "success")
+    except Exception as e:
+        flash(f"Errore: {str(e)}", "danger")
+    return redirect(url_for("service_page"))
+ 
+ 
+@app.route("/service/default", methods=["POST"])
+@login_required
+def service_default():
+    default_active = request.form.get("default_active") == "1"
+    service.set_default_active(default_active)
+    state = "attivo" if default_active else "disattivo"
+    flash(f"Comportamento fuori orario: {state}.", "info")
+    return redirect(url_for("service_page"))
+ 
+ 
+@app.route("/service/status")
+@login_required
+def service_status_json():
+    from flask import jsonify
+    return jsonify(service.get_status())
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

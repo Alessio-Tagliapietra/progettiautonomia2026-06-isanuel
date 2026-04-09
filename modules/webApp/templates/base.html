@@ -31,6 +31,15 @@
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('plates') }}">Targhe</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('users_list') }}">Utenti</a></li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('logs') }}">Log Accessi</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link d-flex align-items-center gap-1"
+                           href="{{ url_for('service_page') }}">
+                            <!-- pallino verde/grigio che rispecchia lo stato del servizio -->
+                            <span id="nav-service-dot"
+                                  style="width:8px;height:8px;border-radius:50%;background:#6c757d;display:inline-block;"></span>
+                            Servizio
+                        </a>
+                    </li>
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
                 </ul>
             </div>
@@ -62,5 +71,21 @@
 
     <!-- Bootstrap JS locale -->
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+
+    <!-- Pallino stato servizio nella navbar (polling leggero) -->
+    <script>
+    (function updateServiceDot() {
+        const dot = document.getElementById('nav-service-dot');
+        if (!dot) return;
+        fetch('/service/status')
+            .then(r => r.json())
+            .then(d => {
+                dot.style.background = d.active ? '#198754' : '#6c757d';
+                dot.title = d.active ? 'Servizio attivo' : 'Servizio disattivo';
+            })
+            .catch(() => {})
+            .finally(() => setTimeout(updateServiceDot, 20000));
+    })();
+    </script>
 </body>
 </html>

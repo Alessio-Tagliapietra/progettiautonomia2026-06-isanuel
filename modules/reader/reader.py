@@ -1,4 +1,5 @@
 import cv2
+import time
 from modules.reader.detection import detect_vehicles, update_tracking
 from modules.reader.vehicle_utils import process_detections
 from modules.reader.mqtt_publisher import MQTTPublisher
@@ -6,6 +7,7 @@ from fast_plate_ocr import LicensePlateRecognizer
 from ultralytics import YOLO
 from sort.sort import Sort
 import modules.reader.config as config
+from modules.webApp.service_controller import service
 
 
 class Models:
@@ -65,9 +67,20 @@ def main():
         if not ret:
             break
 
+        # ── Controllo servizio ──────────────────────────────────────────────
+        if not service.is_active():
+            # Servizio disattivo: scarta il frame senza elaborarlo.
+            # La camera continua a girare, ma CPU/GPU rimangono libere.
+            time.sleep(0.1)   # evita busy-loop a 100% CPU
+            continue
+        # ───────────────────────────────────────────────────────────────────
+
         detections = detect_vehicles(frame, models.coco_model)
         detections = update_tracking(detections, models.tracker)
-        process_detections(detections, frame, frame_count, checked_vehicles, config.GATE_ID, publisher, models)
+        process_detections(
+            detections, frame, frame_count,
+            checked_vehicles, config.GATE_ID, publisher, models
+        )
 
         frame_count += 1
 
@@ -76,3 +89,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
