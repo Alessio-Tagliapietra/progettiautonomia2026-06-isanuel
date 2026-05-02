@@ -9,6 +9,7 @@ try:
     )
     from datetime import date
     from authlib.integrations.flask_client import OAuth
+    from modules.webApp.gcal_client import add_editor, remove_editor, is_available as gcal_available
     import secrets
 
     from modules.webApp.user import User
@@ -386,29 +387,49 @@ def users_list():
 def user_add():
     email = request.form.get("email", "").strip().lower()
     note  = request.form.get("note", "").strip()
-
+ 
     if not email or "@" not in email:
         flash("Email non valida.", "danger")
         return redirect(url_for("users_list"))
-
+ 
     if users_db.add(email, note):
         flash(f"Utente {email} aggiunto.", "success")
+ 
+        # Aggiunge automaticamente come editor del Google Calendar
+        if gcal_available():
+            ok = add_editor(email)
+            if ok:
+                flash(f"{email} aggiunto come editor del calendario Google.", "info")
+            else:
+                flash(f"Utente aggiunto ma non è stato possibile aggiungerlo al calendario Google.", "warning")
+        else:
+            flash("Google Calendar non configurato — utente aggiunto solo alla webapp.", "warning")
     else:
         flash(f"L'email {email} è già autorizzata.", "warning")
+ 
     return redirect(url_for("users_list"))
-
-
+ 
+ 
 @app.route("/users/delete/<path:email>", methods=["POST"])
 @login_required
 def user_delete(email):
     if email.lower() == session.get("user_email", "").lower():
         flash("Non puoi rimuovere te stesso!", "danger")
         return redirect(url_for("users_list"))
-
+ 
     if users_db.remove(email):
         flash(f"Utente {email} rimosso.", "warning")
+ 
+        # Rimuove automaticamente dal Google Calendar
+        if gcal_available():
+            ok = remove_editor(email)
+            if ok:
+                flash(f"{email} rimosso dal calendario Google.", "info")
+            else:
+                flash(f"Utente rimosso dalla webapp ma non trovato nel calendario Google.", "warning")
     else:
         flash("Utente non trovato.", "danger")
+ 
     return redirect(url_for("users_list"))
 
 

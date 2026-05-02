@@ -1,3 +1,4 @@
 sort/
 .venv/
 video3.mp4
+modules/webApp/data/gcal_credentials.json
