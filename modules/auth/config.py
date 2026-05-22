@@ -23,4 +23,11 @@ MIN_ENTRY_INTERVAL_SECONDS   = 10
 MIN_EXIT_INTERVAL_SECONDS     = 60
 ACCESS_TRACKER_CLEANUP_HOURS  = 24
 
+# ── Convenzione gate_id ───────────────────────────────────────────────────────
+# Ogni istanza del reader pubblica un gate_id configurato via env var GATE_ID.
+# Questi set definiscono quali valori corrispondono a entrata o uscita.
+# Aggiungere qui alias se necessario (es. "ingresso", "entry", "exit"...).
+ENTRY_GATE_IDS = {"entrata", "ingresso", "entry", "in"}
+EXIT_GATE_IDS  = {"uscita",  "exit",     "out"}
+
 VERBOSE = True

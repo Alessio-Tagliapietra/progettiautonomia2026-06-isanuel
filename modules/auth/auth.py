@@ -2,6 +2,11 @@
 auth.py
 Entry point del modulo auth.
 Flusso: plates/detected → REST API DB → gate → log
+
+Gestione entrata/uscita:
+  Il gate_id pubblicato da ogni istanza del reader determina il tipo di evento.
+  - ENTRY_GATE_IDS (config): logica di autorizzazione completa, apre solo se autorizzato.
+  - EXIT_GATE_IDS  (config): uscita sempre consentita, serve per tracciare il veicolo.
 """
 import csv
 import os
@@ -12,14 +17,25 @@ import modules.auth.config as config
 from modules.auth.mqtt_client import AuthMQTTClient
 from modules.auth.gate_controller import open_gate, deny_gate
 from modules.auth.access_tracker import access_tracker
-from modules.auth.db_client import DbClient             # ← REST API client
+from modules.auth.db_client import DbClient
 
 
 # ── Client DB (REST) ───────────────────────────────────────────────────────────
 db = DbClient(config.DB_API_URL)
 
 
-# ── Log CSV ────────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _gate_event_type(gate_id: str) -> str:
+    """
+    Restituisce "entrata" o "uscita" in base al gate_id.
+    Se il gate_id non è riconosciuto, si assume entrata (comportamento conservativo).
+    """
+    gid = gate_id.lower().strip()
+    if gid in config.EXIT_GATE_IDS:
+        return "uscita"
+    return "entrata"
+
 
 def log_to_csv(plate: str, status: str, gate_id: str, event: str):
     os.makedirs(os.path.dirname(config.OUTPUT_CSV), exist_ok=True)
@@ -35,13 +51,15 @@ def handle_plate(payload: dict, mqtt: AuthMQTTClient):
     confidence = payload.get("confidence", 0.0)
     gate_id    = payload.get("gate_id", "unknown")
     v_type     = payload.get("vehicle_type", "4wheels")
-    event      = "entrata"   # TODO: distinguere entrata/uscita con gate_id o topic
+
+    # Determina il tipo di evento dal gate_id
+    event = _gate_event_type(gate_id)
 
     if config.VERBOSE:
         print(f"\n{'='*55}")
-        print(f"📨 Ricevuto: {plate} | conf={confidence:.2f} | gate={gate_id}")
+        print(f"📨 Ricevuto: {plate} | conf={confidence:.2f} | gate={gate_id} | evento={event}")
 
-    # ── Veicolo a 2 ruote: autorizzato senza check DB ─────────────────────────
+    # ── Veicolo a 2 ruote: sempre autorizzato ─────────────────────────────────
     if v_type == "2wheels":
         if config.VERBOSE:
             print(f"   🛵 Veicolo 2 ruote ({plate}) → autorizzato automaticamente")
@@ -51,15 +69,33 @@ def handle_plate(payload: dict, mqtt: AuthMQTTClient):
         mqtt.publish_log(plate, "authorized_2wheels", gate_id, event)
         mqtt.publish_gate_command(gate_id, "open", plate)
         log_to_csv(plate, "authorized_2wheels", gate_id, event)
+
+        # Aggiorna il tracker anche per i 2 ruote
+        if event == "entrata":
+            access_tracker.register_entry(plate, gate_id)
+        else:
+            access_tracker.register_exit(plate, gate_id)
         return
 
-    # ── Veicolo a 4 ruote: controlla access tracker ───────────────────────────
+    # ── Smista sulla logica corretta in base all'evento ───────────────────────
+    if event == "entrata":
+        _handle_entry(plate, gate_id, mqtt, event)
+    else:
+        _handle_exit(plate, gate_id, mqtt, event)
+
+
+def _handle_entry(plate: str, gate_id: str, mqtt: AuthMQTTClient, event: str):
+    """
+    Logica entrata: controlla access tracker + autorizzazione DB.
+    Apre il cancello solo se la targa è autorizzata e non scaduta.
+    """
+    # Throttle: evita doppia rilevazione dello stesso veicolo in entrata
     if not access_tracker.can_process_entry(plate, gate_id):
         if config.VERBOSE:
-            print("   ⏱️  Entrata scartata: troppo recente")
+            print("   ⏱️  Entrata scartata: rilevazione troppo recente")
         return
 
-    # ── Verifica autorizzazione via REST API ───────────────────────────────────
+    # Verifica autorizzazione via REST API
     if config.VERBOSE:
         print(f"   🔍 Interrogo DB per {plate}...")
 
@@ -84,7 +120,7 @@ def handle_plate(payload: dict, mqtt: AuthMQTTClient):
         print(f"❌ Errore chiamata DB API: {e}")
         status = "db_error"
 
-    # ── Apri / nega cancello ───────────────────────────────────────────────────
+    # Apri / nega cancello
     if status == "authorized":
         open_gate(gate_id, reason=f"targa {plate} autorizzata")
         access_tracker.register_entry(plate, gate_id)
@@ -93,13 +129,45 @@ def handle_plate(payload: dict, mqtt: AuthMQTTClient):
         deny_gate(gate_id, reason=status)
         mqtt.publish_gate_command(gate_id, "deny", plate)
 
-    # ── Log accesso via REST API (fire-and-forget) ─────────────────────────────
+    # Log e notifiche
+    _publish_and_log(plate, status, gate_id, event, plate_info, mqtt)
+
+
+def _handle_exit(plate: str, gate_id: str, mqtt: AuthMQTTClient, event: str):
+    """
+    Logica uscita: il cancello viene SEMPRE aperto (non si blocca un veicolo dentro).
+    Il tracker viene interrogato solo per coerenza dei log; un veicolo non tracciato
+    viene comunque lasciato uscire (es. sistema riavviato, entrata persa).
+    """
+    # Throttle uscita: evita doppia lettura del veicolo che esce lentamente
+    if not access_tracker.can_process_exit(plate, gate_id):
+        if config.VERBOSE:
+            print("   ⏱️  Uscita scartata: rilevazione troppo recente")
+        return
+
+    # Il cancello di uscita si apre sempre
+    open_gate(gate_id, reason=f"uscita {plate}")
+    access_tracker.register_exit(plate, gate_id)
+    mqtt.publish_gate_command(gate_id, "open", plate)
+
+    # Per le uscite usiamo sempre status="authorized":
+    # il veicolo è già dentro, l'autorizzazione fu verificata all'entrata.
+    status = "authorized"
+
+    if config.VERBOSE:
+        print(f"   🚗 Uscita registrata: {plate} dal gate {gate_id}")
+
+    _publish_and_log(plate, status, gate_id, event, {}, mqtt)
+
+
+def _publish_and_log(plate: str, status: str, gate_id: str, event: str,
+                     plate_info: dict, mqtt: AuthMQTTClient):
+    """Pubblica risultato MQTT, logga su DB e su CSV."""
     try:
         db.log_access(plate_number=plate, status=status, event=event)
     except Exception as e:
         print(f"⚠️  Impossibile loggare l'accesso via API: {e}")
 
-    # ── Pubblica risultato MQTT e log CSV ──────────────────────────────────────
     mqtt.publish_result(plate, status, gate_id, plate_info)
     mqtt.publish_log(plate, status, gate_id, event)
     log_to_csv(plate, status, gate_id, event)

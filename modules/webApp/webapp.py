@@ -9,7 +9,6 @@ try:
     )
     from datetime import date
     from authlib.integrations.flask_client import OAuth
-    from modules.webApp.gcal_client import add_editor, remove_editor, is_available as gcal_available
     import secrets
 
     from modules.webApp.user import User
@@ -350,14 +349,18 @@ def logs_analytics():
     end_date      = request.args.get("end_date", today).strip()
 
     dati_stato = db.get_accessi_per_stato(start_date, end_date)
-    kpi_ev     = db.get_kpi_entrate_uscite(start_date, end_date)
+    total      = sum(dati_stato.values())
+    authorized = dati_stato.get("authorized", 0)
 
     kpi = {
-        "total":    sum(dati_stato.values()),
-        **dati_stato,
-        "entrate":  kpi_ev.get("entrate", 0),
-        "uscite":   kpi_ev.get("uscite", 0),
-        "presenti": kpi_ev.get("presenti", 0),
+        "total":            total,
+        "authorized":       authorized,
+        "not_authorized":   dati_stato.get("not_authorized", 0),
+        "expired":          dati_stato.get("expired", 0),
+        # tasso di rifiuto (non autorizzati + scaduti / totale), 0 se nessun accesso
+        "rejection_rate":   round(
+            (total - authorized) / total * 100, 1
+        ) if total > 0 else 0,
     }
 
     return render_template(
@@ -368,9 +371,6 @@ def logs_analytics():
         dati_orario=db.get_accessi_per_ora(start_date, end_date),
         dati_top_targhe=db.get_top_targhe(start_date, end_date, limit=10),
         dati_trend=db.get_trend_per_stato(start_date, end_date),
-        dati_distrib_ev=db.get_distribuzione_entrate_uscite(start_date, end_date),
-        dati_flusso_ore=db.get_flusso_orario_entrate_uscite(start_date, end_date),
-        dati_saldo=db.get_saldo_giornaliero(start_date, end_date),
     )
 
 
@@ -387,49 +387,29 @@ def users_list():
 def user_add():
     email = request.form.get("email", "").strip().lower()
     note  = request.form.get("note", "").strip()
- 
+
     if not email or "@" not in email:
         flash("Email non valida.", "danger")
         return redirect(url_for("users_list"))
- 
+
     if users_db.add(email, note):
         flash(f"Utente {email} aggiunto.", "success")
- 
-        # Aggiunge automaticamente come editor del Google Calendar
-        if gcal_available():
-            ok = add_editor(email)
-            if ok:
-                flash(f"{email} aggiunto come editor del calendario Google.", "info")
-            else:
-                flash(f"Utente aggiunto ma non è stato possibile aggiungerlo al calendario Google.", "warning")
-        else:
-            flash("Google Calendar non configurato — utente aggiunto solo alla webapp.", "warning")
     else:
         flash(f"L'email {email} è già autorizzata.", "warning")
- 
     return redirect(url_for("users_list"))
- 
- 
+
+
 @app.route("/users/delete/<path:email>", methods=["POST"])
 @login_required
 def user_delete(email):
     if email.lower() == session.get("user_email", "").lower():
         flash("Non puoi rimuovere te stesso!", "danger")
         return redirect(url_for("users_list"))
- 
+
     if users_db.remove(email):
         flash(f"Utente {email} rimosso.", "warning")
- 
-        # Rimuove automaticamente dal Google Calendar
-        if gcal_available():
-            ok = remove_editor(email)
-            if ok:
-                flash(f"{email} rimosso dal calendario Google.", "info")
-            else:
-                flash(f"Utente rimosso dalla webapp ma non trovato nel calendario Google.", "warning")
     else:
         flash("Utente non trovato.", "danger")
- 
     return redirect(url_for("users_list"))
 
 
@@ -441,38 +421,25 @@ def user_edit_note(email):
     flash("Nota aggiornata.", "success")
     return redirect(url_for("users_list"))
 
+# ── Controllo Servizio ────────────────────────────────────────────────────────
+# Aggiungere questi import in cima a webapp.py (dopo gli import esistenti):
+#
+#   from service_controller import service, WEEKDAY_NAMES
+#
+# Poi aggiungere queste route nel corpo di webapp.py.
+
+
 @app.route("/service")
 @login_required
 def service_page():
-    from datetime import date as ddate
-    today = ddate.today()
     status = service.get_status()
-    # Calendario del mese corrente
-    cal = service.get_calendar_month(today.year, today.month)
     return render_template(
         "service.html",
         status=status,
         weekday_names=WEEKDAY_NAMES,
-        calendar=cal,
-        cal_year=today.year,
-        cal_month=today.month,
-        today=today.isoformat(),
     )
- 
- 
-@app.route("/service/calendar")
-@login_required
-def service_calendar_json():
-    """Dati calendario per un mese (AJAX). ?year=2026&month=4"""
-    from flask import jsonify
-    try:
-        year  = int(request.args.get("year",  __import__("datetime").date.today().year))
-        month = int(request.args.get("month", __import__("datetime").date.today().month))
-        return jsonify(service.get_calendar_month(year, month))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
- 
- 
+
+
 @app.route("/service/override", methods=["POST"])
 @login_required
 def service_override():
@@ -485,86 +452,72 @@ def service_override():
         flash("Servizio disattivato manualmente.", "warning")
     elif action == "auto":
         service.set_manual_override(None)
-        flash("Servizio impostato su automatico.", "info")
+        flash("Servizio impostato su automatico (segue orari).", "info")
     else:
         flash("Azione non riconosciuta.", "danger")
     return redirect(url_for("service_page"))
- 
- 
-@app.route("/service/weekly", methods=["POST"])
+
+
+@app.route("/service/schedule/add", methods=["POST"])
 @login_required
-def service_weekly_save():
-    """
-    Salva il template settimanale.
-    Form: per ogni giorno (0-6) un campo JSON con la lista di fasce.
-    Esempio: day_0 = '[{"start":"07:40","end":"08:00"},{"start":"12:00","end":"12:30"}]'
-    """
-    import json as _json
+def service_schedule_add():
     try:
-        for d in range(7):
-            raw = request.form.get(f"day_{d}", "[]").strip()
-            slots = _json.loads(raw) if raw else []
-            # Validazione minima
-            clean = []
-            for s in slots:
-                if s.get("start") and s.get("end") and s["start"] < s["end"]:
-                    clean.append({"start": s["start"], "end": s["end"]})
-            service.set_weekly_day(d, clean)
-        flash("Template settimanale salvato.", "success")
-    except Exception as e:
-        flash(f"Errore: {str(e)}", "danger")
-    return redirect(url_for("service_page"))
- 
- 
-@app.route("/service/day-override", methods=["POST"])
-@login_required
-def service_day_override():
-    """
-    Imposta o rimuove un override per una data specifica.
-    Form: date (YYYY-MM-DD), slots (JSON array), action (set|remove)
-    """
-    import json as _json
-    try:
-        date_str = request.form.get("date", "").strip()
-        action   = request.form.get("action", "set")
- 
-        if not date_str:
-            flash("Data mancante.", "danger")
+        days = [int(d) for d in request.form.getlist("days")]
+        start = request.form.get("start", "").strip()
+        end   = request.form.get("end", "").strip()
+
+        if not days:
+            flash("Seleziona almeno un giorno.", "danger")
             return redirect(url_for("service_page"))
- 
-        if action == "remove":
-            service.remove_day_override(date_str)
-            flash(f"Override rimosso per {date_str}.", "info")
-        else:
-            raw   = request.form.get("slots", "[]").strip()
-            slots = _json.loads(raw) if raw else []
-            clean = []
-            for s in slots:
-                if s.get("start") and s.get("end") and s["start"] < s["end"]:
-                    clean.append({"start": s["start"], "end": s["end"]})
-            service.set_day_override(date_str, clean)
-            label = "chiuso" if not clean else f"{len(clean)} fascia/e"
-            flash(f"Override impostato per {date_str}: {label}.", "success")
+        if not start or not end:
+            flash("Inserisci ora di inizio e fine.", "danger")
+            return redirect(url_for("service_page"))
+        if start >= end:
+            flash("L'orario di inizio deve essere precedente a quello di fine.", "danger")
+            return redirect(url_for("service_page"))
+
+        service.add_slot(days=days, start=start, end=end, enabled=True)
+        flash("Fascia oraria aggiunta.", "success")
     except Exception as e:
         flash(f"Errore: {str(e)}", "danger")
     return redirect(url_for("service_page"))
- 
- 
+
+
+@app.route("/service/schedule/toggle/<int:index>", methods=["POST"])
+@login_required
+def service_schedule_toggle(index):
+    service.toggle_slot(index)
+    flash("Fascia oraria aggiornata.", "info")
+    return redirect(url_for("service_page"))
+
+
+@app.route("/service/schedule/delete/<int:index>", methods=["POST"])
+@login_required
+def service_schedule_delete(index):
+    service.remove_slot(index)
+    flash("Fascia oraria eliminata.", "warning")
+    return redirect(url_for("service_page"))
+
+
 @app.route("/service/default", methods=["POST"])
 @login_required
 def service_default():
+    """Aggiorna il comportamento di default (fuori orario)."""
     default_active = request.form.get("default_active") == "1"
-    service.set_default_active(default_active)
+    status = service.get_status()
+    service.set_schedule(status["schedule"], default_active=default_active)
     state = "attivo" if default_active else "disattivo"
-    flash(f"Comportamento fuori orario: {state}.", "info")
+    flash(f"Comportamento fuori orario impostato su: {state}.", "info")
     return redirect(url_for("service_page"))
- 
- 
+
+
 @app.route("/service/status")
 @login_required
 def service_status_json():
+    """Endpoint JSON per polling AJAX dallo stato in tempo reale."""
     from flask import jsonify
     return jsonify(service.get_status())
+
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 

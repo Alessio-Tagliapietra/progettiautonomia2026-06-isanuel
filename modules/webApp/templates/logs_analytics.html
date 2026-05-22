@@ -7,16 +7,16 @@
         <h2 class="fw-bold mb-0">
             <i class="bi bi-graph-up text-primary me-2"></i>Analytics accessi
         </h2>
-        <p class="text-muted small mb-0">Visualizzazione statistica degli accessi nel periodo selezionato.</p>
+        <p class="text-muted small mb-0">
+            Statistiche degli accessi registrati nel periodo selezionato.
+        </p>
     </div>
-    <div class="d-flex gap-2">
-        <a href="{{ url_for('logs') }}" class="btn btn-outline-secondary shadow-sm">
-            <i class="bi bi-arrow-left me-1"></i> Registro accessi
-        </a>
-    </div>
+    <a href="{{ url_for('logs') }}" class="btn btn-outline-secondary shadow-sm">
+        <i class="bi bi-arrow-left me-1"></i> Registro accessi
+    </a>
 </div>
 
-<!-- FILTRI DATE -->
+<!-- ── FILTRI DATE ──────────────────────────────────────────────────────────── -->
 <div class="card shadow-sm mb-4 border-0">
     <div class="card-body">
         <form method="GET" action="{{ url_for('logs_analytics') }}" class="row g-3 align-items-end">
@@ -34,7 +34,8 @@
                 <button type="submit" class="btn btn-primary flex-grow-1 shadow-sm">
                     <i class="bi bi-funnel me-1"></i> Applica
                 </button>
-                <a href="{{ url_for('logs_analytics') }}" class="btn btn-outline-secondary shadow-sm">
+                <a href="{{ url_for('logs_analytics') }}" class="btn btn-outline-secondary shadow-sm"
+                   title="Ultimi 7 giorni">
                     <i class="bi bi-x-circle"></i>
                 </a>
             </div>
@@ -42,294 +43,277 @@
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-     KPI RIGA 1 — totali per stato
-     ══════════════════════════════════════════════════════════ -->
-<div class="row g-3 mb-3">
-    <div class="col-md-3">
+<!-- ── KPI ──────────────────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+
+    <!-- Totale -->
+    <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm text-center h-100">
             <div class="card-body py-3">
                 <div class="fs-1 fw-bold text-primary">{{ kpi.total }}</div>
-                <div class="text-muted small">Totale accessi</div>
+                <div class="text-muted small">Totale rilevazioni</div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm text-center h-100">
+
+    <!-- Autorizzati -->
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center h-100"
+             style="border-top: 3px solid #198754;">
             <div class="card-body py-3">
                 <div class="fs-1 fw-bold text-success">{{ kpi.authorized }}</div>
                 <div class="text-muted small">Autorizzati</div>
+                {% if kpi.total > 0 %}
+                <div class="mt-1">
+                    <span class="badge bg-success bg-opacity-10 text-success fw-semibold">
+                        {{ "%.0f"|format(kpi.authorized / kpi.total * 100) }}%
+                    </span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm text-center h-100">
+
+    <!-- Non autorizzati -->
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center h-100"
+             style="border-top: 3px solid #dc3545;">
             <div class="card-body py-3">
                 <div class="fs-1 fw-bold text-danger">{{ kpi.not_authorized }}</div>
                 <div class="text-muted small">Non autorizzati</div>
+                {% if kpi.total > 0 %}
+                <div class="mt-1">
+                    <span class="badge bg-danger bg-opacity-10 text-danger fw-semibold">
+                        {{ "%.0f"|format(kpi.not_authorized / kpi.total * 100) }}%
+                    </span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm text-center h-100">
+
+    <!-- Scaduti -->
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center h-100"
+             style="border-top: 3px solid #ffc107;">
             <div class="card-body py-3">
                 <div class="fs-1 fw-bold text-warning">{{ kpi.expired }}</div>
-                <div class="text-muted small">Scaduti</div>
+                <div class="text-muted small">Targhe scadute</div>
+                {% if kpi.total > 0 %}
+                <div class="mt-1">
+                    <span class="badge bg-warning bg-opacity-10 text-warning fw-semibold">
+                        {{ "%.0f"|format(kpi.expired / kpi.total * 100) }}%
+                    </span>
+                </div>
+                {% endif %}
             </div>
         </div>
+    </div>
+
+</div>
+
+<!-- KPI tasso di rifiuto -->
+{% if kpi.total > 0 %}
+<div class="alert border-0 shadow-sm mb-4 d-flex align-items-center gap-3
+    {% if kpi.rejection_rate > 20 %}alert-danger{% elif kpi.rejection_rate > 5 %}alert-warning{% else %}alert-success{% endif %}">
+    <i class="bi {% if kpi.rejection_rate > 20 %}bi-exclamation-triangle-fill{% elif kpi.rejection_rate > 5 %}bi-exclamation-circle{% else %}bi-shield-check{% endif %} fs-4 flex-shrink-0"></i>
+    <div>
+        <strong>Tasso di rifiuto: {{ kpi.rejection_rate }}%</strong>
+        ({{ kpi.not_authorized + kpi.expired }} accessi su {{ kpi.total }} non sono stati autorizzati nel periodo)
+        {% if kpi.rejection_rate > 20 %}
+        — <span class="fw-semibold">Attenzione: valore elevato, verificare le targhe scadute o non registrate.</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- ── GRAFICO 1: Accessi per giorno ────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
+        <i class="bi bi-calendar-range text-primary me-2"></i>Accessi per giorno
+    </div>
+    <div class="card-body">
+        {% if dati_per_giorno %}
+        <canvas id="chartPerGiorno" height="80"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-calendar-x fs-3 d-block mb-2"></i>
+            Nessun accesso nel periodo selezionato.
+        </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-     KPI RIGA 2 — entrate / uscite / presenti
-     ══════════════════════════════════════════════════════════ -->
-<div class="row g-3 mb-4">
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm text-center h-100"
-             style="border-left: 4px solid #198754 !important;">
-            <div class="card-body py-3">
-                <div class="d-flex justify-content-center align-items-center gap-2 mb-1">
-                    <i class="bi bi-box-arrow-in-right text-success fs-4"></i>
-                    <div class="fs-1 fw-bold text-success">{{ kpi.entrate }}</div>
-                </div>
-                <div class="text-muted small">Totale entrate (entry)</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm text-center h-100"
-             style="border-left: 4px solid #0d6efd !important;">
-            <div class="card-body py-3">
-                <div class="d-flex justify-content-center align-items-center gap-2 mb-1">
-                    <i class="bi bi-box-arrow-right text-primary fs-4"></i>
-                    <div class="fs-1 fw-bold text-primary">{{ kpi.uscite }}</div>
-                </div>
-                <div class="text-muted small">Totale uscite (exit)</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm text-center h-100"
-             style="border-left: 4px solid #fd7e14 !important;">
-            <div class="card-body py-3">
-                <div class="d-flex justify-content-center align-items-center gap-2 mb-1">
-                    <i class="bi bi-car-front text-warning fs-4"></i>
-                    <div class="fs-1 fw-bold text-warning">{{ kpi.presenti }}</div>
-                </div>
-                <div class="text-muted small">Veicoli presenti stimati</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SEZIONE A — Grafici panoramica accessi (originali)
-     ══════════════════════════════════════════════════════════ -->
-<h5 class="fw-semibold text-muted mb-3">
-    <i class="bi bi-bar-chart-line me-2"></i>Panoramica accessi
-</h5>
-
+<!-- ── GRAFICI 2 e 3: Distribuzione stato + Picchi orari ─────────────────────── -->
 <div class="row g-4 mb-4">
-    <!-- Grafico 1: Accessi per giorno -->
-    <div class="col-md-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-calendar-range text-primary me-2"></i>Accessi per giorno
-            </div>
-            <div class="card-body">
-                <canvas id="chartPerGiorno" height="110"></canvas>
-            </div>
-        </div>
-    </div>
-    <!-- Grafico 2: Doughnut stato -->
+
+    <!-- Doughnut stato -->
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
                 <i class="bi bi-pie-chart text-primary me-2"></i>Distribuzione per stato
             </div>
             <div class="card-body d-flex align-items-center justify-content-center">
+                {% if kpi.total > 0 %}
                 <canvas id="chartStato" style="max-height:260px;"></canvas>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>Nessun dato
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
-</div>
 
-<div class="row g-4 mb-4">
-    <!-- Grafico 3: Accessi per fascia oraria -->
-    <div class="col-md-6">
+    <!-- Bar orari -->
+    <div class="col-md-8">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-clock text-primary me-2"></i>Accessi per fascia oraria
+                <i class="bi bi-clock text-primary me-2"></i>Distribuzione oraria degli accessi
             </div>
             <div class="card-body">
                 <canvas id="chartOrario" height="130"></canvas>
             </div>
         </div>
     </div>
-    <!-- Grafico 4: Top 10 targhe -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-trophy text-primary me-2"></i>Top 10 targhe più frequenti
-            </div>
-            <div class="card-body">
-                <canvas id="chartTopTarghe" height="130"></canvas>
-            </div>
+
+</div>
+
+<!-- ── GRAFICO 4: Trend doppio ───────────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
+        <i class="bi bi-graph-up-arrow text-primary me-2"></i>
+        Trend giornaliero — autorizzati vs rifiutati
+    </div>
+    <div class="card-body">
+        {% if dati_per_giorno %}
+        <canvas id="chartTrend" height="70"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>Nessun dato nel periodo.
         </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- Grafico 5: Trend doppio -->
-<div class="row g-4 mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-graph-up-arrow text-primary me-2"></i>Trend autorizzati vs non autorizzati
-            </div>
-            <div class="card-body">
-                <canvas id="chartTrend" height="60"></canvas>
-            </div>
+<!-- ── GRAFICO 5: Top targhe ─────────────────────────────────────────────────── -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
+        <i class="bi bi-trophy text-primary me-2"></i>
+        Top 10 targhe più frequenti
+        <small class="text-muted fw-normal ms-2">— accessi autorizzati e non</small>
+    </div>
+    <div class="card-body">
+        {% if dati_top_targhe %}
+        <canvas id="chartTopTarghe" height="100"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>Nessun dato nel periodo.
         </div>
+        {% endif %}
     </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-     SEZIONE B — Nuovi grafici Entrate / Uscite
-     ══════════════════════════════════════════════════════════ -->
-<h5 class="fw-semibold text-muted mb-3 mt-2">
-    <i class="bi bi-arrow-left-right me-2"></i>Analisi entrate e uscite
-</h5>
-
-<div class="row g-4 mb-4">
-    <!-- Grafico 6: Doughnut entrate vs uscite -->
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-pie-chart-fill text-success me-2"></i>Entrate vs Uscite
-            </div>
-            <div class="card-body d-flex align-items-center justify-content-center">
-                <canvas id="chartDistribEV" style="max-height:260px;"></canvas>
-            </div>
-        </div>
-    </div>
-    <!-- Grafico 7: Flusso orario entry/exit -->
-    <div class="col-md-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-clock-history text-success me-2"></i>Flusso orario entrate e uscite
-            </div>
-            <div class="card-body">
-                <canvas id="chartFlussoOre" height="110"></canvas>
-            </div>
-        </div>
-    </div>
+<!-- ── NOTA METODOLOGICA ───────────────────────────────────────────────────── -->
+<div class="alert alert-light border shadow-sm small text-muted">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>Nota:</strong> Le statistiche si basano sulle rilevazioni effettive del sistema di lettura targhe.
+    Periodi in cui il servizio è stato disattivato non sono coperti. I dati riflettono i veicoli rilevati
+    dalla telecamera, non il traffico reale complessivo.
 </div>
 
-<!-- Grafico 8: Saldo giornaliero -->
-<div class="row g-4 mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold border-bottom-0 pt-3">
-                <i class="bi bi-graph-up text-success me-2"></i>Saldo giornaliero — Entrate, Uscite e Saldo
-            </div>
-            <div class="card-body">
-                <canvas id="chartSaldo" height="65"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     CHART.JS CDN + SCRIPT
-     ══════════════════════════════════════════════════════════ -->
+<!-- ── CHART.JS ───────────────────────────────────────────────────────────── -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <script>
-// ── Dati dal backend via Jinja2 tojson ────────────────────────────────────────
 const datiPerGiorno  = {{ dati_per_giorno  | tojson }};
 const datiStato      = {{ dati_stato       | tojson }};
 const datiOrario     = {{ dati_orario      | tojson }};
 const datiTopTarghe  = {{ dati_top_targhe  | tojson }};
 const datiTrend      = {{ dati_trend       | tojson }};
-// nuovi — entrate/uscite
-const datiDistribEV  = {{ dati_distrib_ev  | tojson }};
-const datiFlussoOre  = {{ dati_flusso_ore  | tojson }};
-const datiSaldo      = {{ dati_saldo       | tojson }};
-
-// ── Palette colori ────────────────────────────────────────────────────────────
-const C = {
-    authorized:     'rgba( 25, 135,  84, 0.85)',
-    not_authorized: 'rgba(220,  53,  69, 0.85)',
-    expired:        'rgba(255, 193,   7, 0.85)',
-    primary:        'rgba( 13, 110, 253, 0.85)',
-    primaryBg:      'rgba( 13, 110, 253, 0.12)',
-    successBg:      'rgba( 25, 135,  84, 0.12)',
-    dangerBg:       'rgba(220,  53,  69, 0.12)',
-    entry:          'rgba( 25, 135,  84, 0.85)',  // verde  → entrate
-    entryBg:        'rgba( 25, 135,  84, 0.12)',
-    exit:           'rgba( 13, 110, 253, 0.85)',  // blu    → uscite
-    exitBg:         'rgba( 13, 110, 253, 0.12)',
-    saldo:          'rgba(253, 126,  20, 0.90)',  // arancio → saldo
-    saldoBg:        'rgba(253, 126,  20, 0.10)',
-};
 
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 Chart.defaults.color = '#6c757d';
-const gridColor = 'rgba(0,0,0,0.05)';
+const gridColor = 'rgba(0,0,0,0.06)';
 
-// ══ GRAFICI ORIGINALI ════════════════════════════════════════════════════════
+const C = {
+    authorized:     'rgba(25,135,84,0.85)',
+    not_authorized: 'rgba(220,53,69,0.85)',
+    expired:        'rgba(255,193,7,0.85)',
+    primary:        'rgba(13,110,253,0.85)',
+    primaryBg:      'rgba(13,110,253,0.10)',
+    successBg:      'rgba(25,135,84,0.10)',
+    dangerBg:       'rgba(220,53,69,0.10)',
+};
 
-// 1) Accessi per giorno (Line)
-new Chart(document.getElementById('chartPerGiorno'), {
-    type: 'line',
-    data: {
-        labels: datiPerGiorno.map(d => d.giorno),
-        datasets: [{
-            label: 'Accessi',
-            data: datiPerGiorno.map(d => d.count),
-            borderColor: C.primary, backgroundColor: C.primaryBg,
-            borderWidth: 2, tension: 0.3, fill: true,
-            pointBackgroundColor: C.primary, pointRadius: 4,
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-            y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
-            x: { grid: { display: false } }
+// 1 — Accessi per giorno (line)
+if (document.getElementById('chartPerGiorno') && datiPerGiorno.length) {
+    new Chart(document.getElementById('chartPerGiorno'), {
+        type: 'line',
+        data: {
+            labels: datiPerGiorno.map(d => d.giorno),
+            datasets: [{
+                label: 'Accessi',
+                data: datiPerGiorno.map(d => d.count),
+                borderColor: C.primary,
+                backgroundColor: C.primaryBg,
+                borderWidth: 2, tension: 0.35, fill: true,
+                pointBackgroundColor: C.primary, pointRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
+                x: { grid: { display: false } }
+            }
         }
-    }
-});
+    });
+}
 
-// 2) Doughnut stato (authorized / not_authorized / expired)
-new Chart(document.getElementById('chartStato'), {
-    type: 'doughnut',
-    data: {
-        labels: ['Autorizzati', 'Non autorizzati', 'Scaduti'],
-        datasets: [{
-            data: [
-                datiStato.authorized     || 0,
-                datiStato.not_authorized || 0,
-                datiStato.expired        || 0,
-            ],
-            backgroundColor: [C.authorized, C.not_authorized, C.expired],
-            borderWidth: 2, borderColor: '#fff',
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } } },
-        cutout: '65%',
-    }
-});
+// 2 — Doughnut stato
+if (document.getElementById('chartStato')) {
+    new Chart(document.getElementById('chartStato'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Autorizzati', 'Non autorizzati', 'Scaduti'],
+            datasets: [{
+                data: [
+                    datiStato.authorized     || 0,
+                    datiStato.not_authorized || 0,
+                    datiStato.expired        || 0,
+                ],
+                backgroundColor: [C.authorized, C.not_authorized, C.expired],
+                borderWidth: 2, borderColor: '#fff',
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } }
+            },
+            cutout: '65%',
+        }
+    });
+}
 
-// 3) Bar orario — totale accessi per ora (0-23)
+// 3 — Distribuzione oraria (bar)
 const oreLabels = Array.from({length: 24}, (_, i) => `${String(i).padStart(2,'0')}:00`);
 const oreValues = oreLabels.map((_, i) => {
     const f = datiOrario.find(d => d.ora === i);
     return f ? f.count : 0;
 });
+// Colori graduali: arancione nelle ore di punta, blu nelle ore vuote
+const maxVal = Math.max(...oreValues, 1);
+const oreColors = oreValues.map(v => {
+    const t = v / maxVal;
+    const r = Math.round(13 + t * (253 - 13));
+    const g = Math.round(110 + t * (126 - 110));
+    const b = Math.round(253 + t * (20 - 253));
+    return `rgba(${r},${g},${b},0.80)`;
+});
+
 new Chart(document.getElementById('chartOrario'), {
     type: 'bar',
     data: {
@@ -337,7 +321,7 @@ new Chart(document.getElementById('chartOrario'), {
         datasets: [{
             label: 'Accessi',
             data: oreValues,
-            backgroundColor: C.primary,
+            backgroundColor: oreColors,
             borderRadius: 4,
         }]
     },
@@ -351,159 +335,77 @@ new Chart(document.getElementById('chartOrario'), {
     }
 });
 
-// 4) Top 10 targhe (Bar orizzontale)
-new Chart(document.getElementById('chartTopTarghe'), {
-    type: 'bar',
-    data: {
-        labels: datiTopTarghe.map(d => d.plate_number),
-        datasets: [{
-            label: 'Accessi',
-            data: datiTopTarghe.map(d => d.count),
-            backgroundColor: datiTopTarghe.map((_, i) =>
-                `hsla(${210 + i * 8}, 70%, ${55 - i * 2}%, 0.82)`),
-            borderRadius: 4,
-        }]
-    },
-    options: {
-        indexAxis: 'y',
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-            x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
-            y: { grid: { display: false } }
-        }
-    }
-});
+// 4 — Trend doppio: autorizzati vs rifiutati (non_auth + expired aggregati)
+if (document.getElementById('chartTrend') && datiTrend) {
+    // Costruisce un unico array di date unione tra le due serie
+    const trendLabels = [...new Set([
+        ...datiTrend.authorized.map(d => d.giorno),
+        ...datiTrend.not_authorized.map(d => d.giorno),
+    ])].sort();
 
-// 5) Trend doppio: autorizzati vs non autorizzati per giorno
-const trendLabels = [...new Set([
-    ...datiTrend.authorized.map(d => d.giorno),
-    ...datiTrend.not_authorized.map(d => d.giorno),
-])].sort();
-const trendAuth    = trendLabels.map(g => (datiTrend.authorized.find(d => d.giorno === g)    || {count:0}).count);
-const trendNotAuth = trendLabels.map(g => (datiTrend.not_authorized.find(d => d.giorno === g) || {count:0}).count);
+    const trendAuth    = trendLabels.map(g =>
+        (datiTrend.authorized.find(d => d.giorno === g)    || {count: 0}).count);
+    const trendNotAuth = trendLabels.map(g =>
+        (datiTrend.not_authorized.find(d => d.giorno === g) || {count: 0}).count);
 
-new Chart(document.getElementById('chartTrend'), {
-    type: 'line',
-    data: {
-        labels: trendLabels,
-        datasets: [
-            {
-                label: 'Autorizzati',
-                data: trendAuth,
-                borderColor: C.authorized, backgroundColor: C.successBg,
-                borderWidth: 2, tension: 0.3, fill: true,
-                pointRadius: 4, pointBackgroundColor: C.authorized,
+    new Chart(document.getElementById('chartTrend'), {
+        type: 'line',
+        data: {
+            labels: trendLabels,
+            datasets: [
+                {
+                    label: 'Autorizzati',
+                    data: trendAuth,
+                    borderColor: C.authorized, backgroundColor: C.successBg,
+                    borderWidth: 2, tension: 0.3, fill: true,
+                    pointRadius: 4, pointBackgroundColor: C.authorized,
+                },
+                {
+                    label: 'Non autorizzati',
+                    data: trendNotAuth,
+                    borderColor: C.not_authorized, backgroundColor: C.dangerBg,
+                    borderWidth: 2, tension: 0.3, fill: true,
+                    pointRadius: 4, pointBackgroundColor: C.not_authorized,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } }
             },
-            {
-                label: 'Non autorizzati',
-                data: trendNotAuth,
-                borderColor: C.not_authorized, backgroundColor: C.dangerBg,
-                borderWidth: 2, tension: 0.3, fill: true,
-                pointRadius: 4, pointBackgroundColor: C.not_authorized,
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
+                x: { grid: { display: false } }
             }
-        ]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } } },
-        scales: {
-            y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
-            x: { grid: { display: false } }
         }
-    }
-});
+    });
+}
 
-// ══ NUOVI GRAFICI — ENTRATE / USCITE ════════════════════════════════════════
-
-// 6) Doughnut entrate vs uscite
-new Chart(document.getElementById('chartDistribEV'), {
-    type: 'doughnut',
-    data: {
-        labels: ['Entrate', 'Uscite'],
-        datasets: [{
-            data: [datiDistribEV.entrate || 0, datiDistribEV.uscite || 0],
-            backgroundColor: [C.entry, C.exit],
-            borderWidth: 2, borderColor: '#fff',
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom', labels: { padding: 15, usePointStyle: true } } },
-        cutout: '65%',
-    }
-});
-
-// 7) Bar doppia: flusso orario entrate vs uscite (0-23)
-//    datiFlussoOre è già un array di 24 elementi con {ora, entrate, uscite}
-new Chart(document.getElementById('chartFlussoOre'), {
-    type: 'bar',
-    data: {
-        labels: oreLabels,
-        datasets: [
-            {
-                label: 'Entrate',
-                data: datiFlussoOre.map(d => d.entrate),
-                backgroundColor: C.entry,
-                borderRadius: 3,
-            },
-            {
-                label: 'Uscite',
-                data: datiFlussoOre.map(d => d.uscite),
-                backgroundColor: C.exit,
-                borderRadius: 3,
+// 5 — Top 10 targhe (bar orizzontale)
+if (document.getElementById('chartTopTarghe') && datiTopTarghe.length) {
+    new Chart(document.getElementById('chartTopTarghe'), {
+        type: 'bar',
+        data: {
+            labels: datiTopTarghe.map(d => d.plate_number),
+            datasets: [{
+                label: 'Accessi',
+                data: datiTopTarghe.map(d => d.count),
+                backgroundColor: datiTopTarghe.map((_, i) =>
+                    `hsla(${213 + i * 7}, 65%, ${52 - i * 2}%, 0.80)`),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
+                y: { grid: { display: false } }
             }
-        ]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 16 } } },
-        scales: {
-            y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: gridColor } },
-            x: { grid: { display: false } }
         }
-    }
-});
-
-// 8) Line tripla: saldo giornaliero (entrate, uscite, saldo)
-//    La linea saldo è tratteggiata per distinguerla visivamente
-new Chart(document.getElementById('chartSaldo'), {
-    type: 'line',
-    data: {
-        labels: datiSaldo.map(d => d.giorno),
-        datasets: [
-            {
-                label: 'Entrate',
-                data: datiSaldo.map(d => d.entrate),
-                borderColor: C.entry, backgroundColor: C.entryBg,
-                borderWidth: 2, tension: 0.3, fill: true,
-                pointRadius: 4, pointBackgroundColor: C.entry,
-            },
-            {
-                label: 'Uscite',
-                data: datiSaldo.map(d => d.uscite),
-                borderColor: C.exit, backgroundColor: C.exitBg,
-                borderWidth: 2, tension: 0.3, fill: true,
-                pointRadius: 4, pointBackgroundColor: C.exit,
-            },
-            {
-                label: 'Saldo (entrate − uscite)',
-                data: datiSaldo.map(d => d.saldo),
-                borderColor: C.saldo, backgroundColor: C.saldoBg,
-                borderWidth: 2.5, tension: 0.3, fill: false,
-                borderDash: [6, 3],   // tratteggiata
-                pointRadius: 4, pointBackgroundColor: C.saldo,
-            },
-        ]
-    },
-    options: {
-        responsive: true,
-        plugins: { legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } } },
-        scales: {
-            y: { grid: { color: gridColor } },
-            x: { grid: { display: false } }
-        }
-    }
-});
+    });
+}
 </script>
 {% endblock %}

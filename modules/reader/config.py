@@ -157,8 +157,20 @@ PROGRESS_INTERVAL = 100
 # MQTT
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
-GATE_ID = "entrata"
 
-# MediaMTX
-RTSP_URL = "rtsp://localhost:8554/camera1"
-# RTSP_URL = "./test_input/video3.mp4"
+
+
+GATE_ID  = os.getenv("GATE_ID",  "entrata")
+RTSP_URL = os.getenv("RTSP_URL", "rtsp://localhost:8554/camera1")
+
+# ============================================================================
+# Avvio delle due istanze in produzione (terminale / systemd):
+#
+# Istanza 1 — telecamera ingresso:
+#   GATE_ID=entrata RTSP_URL=rtsp://192.168.1.10:8554/cam_entrata python -m modules.reader.reader
+#
+# Istanza 2 — telecamera uscita:
+#   GATE_ID=uscita  RTSP_URL=rtsp://192.168.1.11:8554/cam_uscita  python -m modules.reader.reader
+#
+# Il modulo auth è uno solo e gestisce entrambi i gate_id.
+# ============================================================================
