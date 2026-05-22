@@ -10,7 +10,7 @@ dal database per evitare di perdere le entrate non ancora uscite.
 
 from datetime import datetime, timedelta
 from typing import Dict, Optional
-import server.config as config
+import modules.auth.config as config
 
 
 class AccessTracker:
@@ -37,6 +37,10 @@ class AccessTracker:
         # }
         self.access_history: Dict[str, Dict] = {}
         self._db = db  # riferimento al DatabaseManager, può essere None
+
+        # Dizionario separato per i tentativi negati (veicoli non autorizzati)
+        # plate_number -> datetime dell'ultimo tentativo negato
+        self._denied_history: Dict[str, datetime] = {}
 
     def set_db(self, db):
         """
@@ -255,6 +259,54 @@ class AccessTracker:
 
         return True
 
+    def can_process_denied(self, plate_number: str, interval_seconds: int = 30) -> bool:
+        """
+        Verifica se un tentativo di accesso negato può generare un nuovo log.
+
+        Evita di registrare log duplicati quando più frame consecutivi
+        riconoscono lo stesso veicolo non autorizzato.
+
+        Args:
+            plate_number: targa del veicolo non autorizzato
+            interval_seconds: secondi minimi tra un log negato e il successivo
+                              (default: 30)
+
+        Returns:
+            bool: True se il log può essere registrato, False se troppo recente
+        """
+        plate_number = plate_number.upper().strip()
+
+        last_denied = self._denied_history.get(plate_number)
+
+        if last_denied is None:
+            return True  # primo tentativo, registra sempre
+
+        time_since_last = datetime.now() - last_denied
+        min_interval = timedelta(seconds=interval_seconds)
+
+        if time_since_last < min_interval:
+            if config.VERBOSE:
+                remaining = (min_interval - time_since_last).total_seconds()
+                print(f"     ⏱️  Accesso negato già loggato, attendi {remaining:.0f}s "
+                      f"({plate_number})")
+            return False
+
+        return True
+
+    def register_denied(self, plate_number: str):
+        """
+        Registra il timestamp di un tentativo di accesso negato.
+        Da chiamare subito dopo aver scritto il log nel DB.
+
+        Args:
+            plate_number: targa del veicolo non autorizzato
+        """
+        plate_number = plate_number.upper().strip()
+        self._denied_history[plate_number] = datetime.now()
+
+        if config.VERBOSE:
+            print(f"     🚫 Accesso negato registrato: {plate_number}")
+
     def register_entry(self, plate_number: str, gate_id: str):
         """Registra un'entrata."""
         plate_number = plate_number.upper().strip()
@@ -315,8 +367,17 @@ class AccessTracker:
         for plate in plates_to_remove:
             del self.access_history[plate]
 
-        if config.VERBOSE and plates_to_remove:
-            print(f"🧹 Cleanup: rimossi {len(plates_to_remove)} record obsoleti dalla memoria")
+        # Pulizia anche dei denied obsoleti
+        denied_to_remove = [
+            p for p, ts in self._denied_history.items()
+            if ts < cutoff_time
+        ]
+        for plate in denied_to_remove:
+            del self._denied_history[plate]
+
+        if config.VERBOSE and (plates_to_remove or denied_to_remove):
+            print(f"🧹 Cleanup: rimossi {len(plates_to_remove)} accessi e "
+                  f"{len(denied_to_remove)} negati obsoleti dalla memoria")
 
 
 # ── Istanza globale ───────────────────────────────────────────────────────────
